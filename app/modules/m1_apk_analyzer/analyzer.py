@@ -1,6 +1,7 @@
 import re
 import xml.etree.ElementTree as ET
 from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 from app.schemas.finding import StandardFinding
 
@@ -141,7 +142,8 @@ KB = {
 CODE_RULES = {k: re.compile(v) for k, v in {
     "SECRET-PRIVATE-KEY": r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----",
     "SECRET-CREDENTIAL":  # skips validation/UI names such as PASSWORD_PATTERN or passwordHint
-        r'(?i)\b(?!\w*(?:pattern|regex|format|hint|label|message|msg|error|title|text|field|view)\w*\s*=)'
+        # (?=\w+\s*=\s*") rejects the ~99% of words that are not assigned a string literal before the costlier checks
+        r'(?i)\b(?=\w+\s*=\s*")(?!\w*(?:pattern|regex|format|hint|label|message|msg|error|title|text|field|view)\w*\s*=)'
         r'\w*(?:password|passwd|pwd|passphrase)\w*\s*=\s*"'
         r'(?!(?-i:[a-z_.]*(?:pass|pwd|secret)[a-z_.]*)")(?![^"]*\s)[^"]{4,}"'  # skip key names like "pref_password"
         r'|<string name="[^"]*(?:password|passwd|pwd)[^"]*">(?![^<]*(?:pass|pwd|secret))(?![^<]*\s)[^<]{4,}</string>',
@@ -173,6 +175,8 @@ CODE_RULES = {k: re.compile(v) for k, v in {
     "TLS-WEBVIEW-SSL-ERROR": r"onReceivedSslError\([^)]*\)\s*\{[^}]*?\.proceed\(\)",
 }.items()}
 JADX_LOCAL = re.compile(r"(?:str|bArr|obj)\d*")  # jadx-generated local names; too generic to resolve by name
+# Substring pre-check for rules whose regex has no literal prefix (they would otherwise probe every word of every file)
+HINTS = {"SECRET-CREDENTIAL": ("pass", "pwd")}
 
 # ponytail: prefix skip list for bundled libraries; swap for real library detection if FP/FN rates demand it
 LIBRARY_PREFIXES = ("android/", "androidx/", "kotlin/", "kotlinx/", "com/google/", "okhttp3/", "okio/", "retrofit2/",
@@ -309,6 +313,14 @@ def _text_files(decompiled_dir: Path, java_dir: Path, app_prefix: str):
             yield p.relative_to(decompiled_dir).as_posix(), p
 
 
+@lru_cache(maxsize=None)  # M1, M2 and the permission check read the same files; the scanner clears it after each scan
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:  # a decompiled file can vanish or be locked (seen on Windows): skip it rather than fail the scan
+        return ""
+
+
 def _assigned_literal(name: str, text: str, hops: int = 1) -> bool:
     """True if the file assigns `name` a string/array literal, directly or via one `name = other.getBytes(..)` hop."""
     # ponytail: same-file name matching, no real data flow; FlowDroid/taint analysis is the upgrade path
@@ -318,12 +330,15 @@ def _assigned_literal(name: str, text: str, hops: int = 1) -> bool:
     return bool(m) and (m.group(1) is None or (hops > 0 and _assigned_literal(m.group(1), text, hops - 1)))
 
 
-def _code_findings(decompiled_dir: Path, java_dir: Path, app_prefix: str, rules=CODE_RULES, kb=KB) -> list[StandardFinding]:
+def _code_findings(decompiled_dir: Path, java_dir: Path, app_prefix: str, rules=CODE_RULES, kb=KB,
+                   hints=HINTS) -> list[StandardFinding]:
     out = []
     for rel, path in _text_files(decompiled_dir, java_dir, app_prefix):
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        lines = text.split("\n")
+        text = _read(path)
+        lines, low = text.split("\n"), text.lower()
         for rule_id, rx in rules.items():
+            if rule_id in hints and not any(h in low for h in hints[rule_id]):
+                continue
             hits = []
             for m in rx.finditer(text):
                 ref = m.groupdict().get("ref")

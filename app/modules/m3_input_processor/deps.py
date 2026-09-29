@@ -1,5 +1,6 @@
 import sys
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 import requests
 from pathlib import Path
 from typing import List
@@ -36,10 +37,10 @@ class DependencyScanner:
     OSV_URL = "https://api.osv.dev/v1/query"
 
     def scan_apk(self, apk_path: Path) -> List[StandardFinding]:
-        findings = []
-        for package_name, version in extract_dependencies(apk_path).items():
-            findings.extend(self.query_osv(package_name, version))
-        return findings
+        # one HTTP call per library (~1 s each; React Native apps bundle 60+), so keep 8 in flight
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = pool.map(lambda dep: self.query_osv(*dep), extract_dependencies(apk_path).items())
+        return [f for found in results for f in found]
 
     def query_osv(self, package_name: str, version: str) -> List[StandardFinding]:
         payload = {

@@ -1,7 +1,7 @@
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from app.modules.m1_apk_analyzer.analyzer import A, _code_findings, _finding, _rank  # shared rule engine
+from app.modules.m1_apk_analyzer.analyzer import A, _code_findings, _finding, _rank, _read  # shared rule engine
 from app.schemas.finding import StandardFinding
 
 KEY, SEC, EP, HTTP, URL, AUTH, TLS, PERM = ("Hardcoded API Keys", "Hardcoded API Secrets", "Insecure API Endpoints",
@@ -89,7 +89,8 @@ KB = {
 SKIP_HOSTS = (r"(?!schemas\.android\.com|www\.w3\.org|xmlpull\.org|ns\.adobe\.com|java\.sun\.com|(?:www\.)?apache\.org"
               r"|purl\.org|json-schema\.org|localhost|127\.0\.0\.1|10\.0\.2\.2)")  # XML namespaces, loopback, emulator
 SENSITIVE = r"(?:password|passwd|pwd|pass|token|access_token|auth_token|api_?key|apikey|secret|client_secret|pin|cvv)"
-UI_NAMES = r"(?!\w*(?:pattern|regex|format|hint|label|message|msg|error|title|text|field|view|url|type|name|header)\w*\s*=)"
+# (?=\w+\s*=\s*") first: cheaply rejects words that are not assigned a string literal (see M1 SECRET-CREDENTIAL)
+UI_NAMES = r'(?=\w+\s*=\s*")(?!\w*(?:pattern|regex|format|hint|label|message|msg|error|title|text|field|view|url|type|name|header)\w*\s*=)'
 
 CODE_RULES = {k: re.compile(v) for k, v in {
     "API-KEY-GOOGLE": r"AIza[0-9A-Za-z_\-]{35}",
@@ -111,7 +112,7 @@ CODE_RULES = {k: re.compile(v) for k, v in {
     "ENDPOINT-DEBUG":
         r"https?://[^/\"'<\s]*\b(?:dev|develop|staging|stage|test|testing|qa|uat|sandbox|debug|internal)\b[^/\"'<\s]*"
         r"|https?://[^\"'<\s]*/(?:debug|admin|internal)\b",
-    "ENDPOINT-CLOUD": r"https?://[\w-]+\.(?:firebaseio\.com|firebasedatabase\.app)|[\w.-]*\bs3[\w.-]*\.amazonaws\.com",
+    "ENDPOINT-CLOUD": r"https?://[\w-]+\.(?:firebaseio\.com|firebasedatabase\.app)|\bs3[\w.-]*\.amazonaws\.com",
     "HTTP-ENDPOINT": rf"http://{SKIP_HOSTS}[^\"'<\s]*",  # no quote required: Hermes bytecode stores strings unquoted
     "URL-SENSITIVE-PARAM":
         rf'(?i)[?&]{SENSITIVE}=|@Query\(\s*"{SENSITIVE}"|appendQueryParameter\(\s*"{SENSITIVE}"',
@@ -129,6 +130,8 @@ CODE_RULES = {k: re.compile(v) for k, v in {
         r"|https://mail\.google\.com/",
     "PERM-SERVICE-ACCOUNT": r'"type"\s*:\s*"service_account"',
 }.items()}
+HINTS = {"API-KEY-GENERIC": ("apikey", "api_key", "appkey", "app_key", "consumerkey", "consumer_key"),
+         "API-SECRET-GENERIC": ("secret", "token", "bearer", "privatekey", "private_key", "authkey", "auth_key")}
 
 # Permission -> Android API markers that show it is actually used. Searched across ALL code, libraries included,
 # because an SDK can be the legitimate user. ponytail: marker list, not a full API-permission map (PScout/Axplorer).
@@ -161,7 +164,7 @@ def _unused_permissions(man, java_dir: Path) -> list[StandardFinding]:
     for path in src.rglob("*.java"):
         if not pending:
             break
-        text = path.read_text(encoding="utf-8", errors="ignore")
+        text = _read(path)
         pending = {p: rx for p, rx in pending.items() if not rx.search(text)}
     out = []
     for p in sorted(pending):
@@ -177,4 +180,5 @@ def analyze(decompiled_dir: Path, java_dir: Path) -> list[StandardFinding]:
     decompiled_dir, java_dir = Path(decompiled_dir), Path(java_dir)
     man = ET.parse(decompiled_dir / "AndroidManifest.xml").getroot()
     app_prefix = man.get("package", "").replace(".", "/") + "/"
-    return _rank(_code_findings(decompiled_dir, java_dir, app_prefix, CODE_RULES, KB) + _unused_permissions(man, java_dir))
+    return _rank(_code_findings(decompiled_dir, java_dir, app_prefix, CODE_RULES, KB, HINTS)
+                 + _unused_permissions(man, java_dir))

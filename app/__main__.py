@@ -25,6 +25,7 @@ def scan(file_path: str) -> dict:
         log("[*] Running M1 APK rules, M2 API rules and the OSV dependency check...")
         findings = m1.analyze(decompiled, sources) + m2.analyze(decompiled, sources) \
             + DependencyScanner().scan_apk(extractor.apk_path)
+        m1._read.cache_clear()  # file texts are shared by M1/M2 only within one scan
     findings.sort(key=lambda f: m1.SEVERITIES.index(f.severity))
     return {"file": Path(file_path).name, "type": kind, "sha256": sha256,
             "findings": [f.model_dump(exclude_none=True) for f in findings]}
