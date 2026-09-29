@@ -181,7 +181,10 @@ HINTS = {"SECRET-CREDENTIAL": ("pass", "pwd")}
 # ponytail: prefix skip list for bundled libraries; swap for real library detection if FP/FN rates demand it
 LIBRARY_PREFIXES = ("android/", "androidx/", "kotlin/", "kotlinx/", "com/google/", "okhttp3/", "okio/", "retrofit2/",
                     "com/squareup/", "org/apache/", "org/jetbrains/", "org/intellij/", "io/reactivex/", "com/facebook/",
-                    "org/bouncycastle/", "org/spongycastle/", "javax/", "j$/", "org/json/", "com/fasterxml/")
+                    "org/bouncycastle/", "org/spongycastle/", "javax/", "j$/", "org/json/", "com/fasterxml/",
+                    # React Native / Expo native modules (the app's own logic lives in the JS bundle, which is scanned)
+                    "com/reactnative", "com/swmansion/", "expo/modules/", "host/exp/", "io/invertase/",
+                    "com/th3rdwave/", "com/horcrux/", "com/oblador/")
 
 HIGH_RISK_PERMISSIONS = {
     "READ_SMS", "RECEIVE_SMS", "SEND_SMS", "READ_CALL_LOG", "WRITE_CALL_LOG", "PROCESS_OUTGOING_CALLS", "READ_CONTACTS",
@@ -306,8 +309,10 @@ def _text_files(decompiled_dir: Path, java_dir: Path, app_prefix: str):
         rel = p.relative_to(src).as_posix()
         if not rel.startswith(LIBRARY_PREFIXES) or rel.startswith(app_prefix):
             yield rel, p
-    resources = [decompiled_dir / "AndroidManifest.xml", *(decompiled_dir / "res").glob("values*/strings.xml"),
-                 *(decompiled_dir / "assets").rglob("*")]  # manifest: API keys often sit in <meta-data>
+    # manifest: API keys often sit in <meta-data>. Default-locale strings only: values-ja etc. hold translated UI
+    # labels (e.g. パスワード) that look like secrets, and apktool merges every default string into values/strings.xml
+    resources = [decompiled_dir / "AndroidManifest.xml", decompiled_dir / "res" / "values" / "strings.xml",
+                 *(decompiled_dir / "assets").rglob("*")]
     for p in resources:  # 32 MB cap: React Native/Hermes bundles (the app's whole JS logic) sit in assets at several MB
         if p.is_file() and p.stat().st_size < 32_000_000:
             yield p.relative_to(decompiled_dir).as_posix(), p

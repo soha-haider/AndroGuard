@@ -129,6 +129,8 @@ def test_m1():
         _write(dec, "apktool.yml", "sdkInfo:\n  minSdkVersion: '16'\n  targetSdkVersion: '23'\n")
         _write(dec, "res/xml/network_security_config.xml", NSC)
         _write(dec, "res/values/strings.xml", STRINGS)
+        _write(dec, "res/values-ja/strings.xml", '<resources><string name="password">パスワード</string></resources>')
+        _write(jadx, "sources/expo/modules/webview/Lib.java", "WebView.setWebContentsDebuggingEnabled(true);")
         _write(dec, "assets/key.pem", "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\n")
         _write(jadx, "sources/com/test/vuln/Vuln.java", VULN)
         _write(jadx, "sources/com/test/vuln/Safe.java", SAFE)
@@ -140,7 +142,8 @@ def test_m1():
         assert rules == set(KB), f"missing: {set(KB) - rules}, unexpected: {rules - set(KB)}"
 
         by_component = {f.affected_component: f for f in findings}
-        assert not any(f.affected_component in ("Safe.java", "com/test/vuln/Safe.java", "androidx/crypto/Lib.java")
+        assert not any(f.affected_component in ("Safe.java", "com/test/vuln/Safe.java", "androidx/crypto/Lib.java",
+                                                "res/values-ja/strings.xml", "expo/modules/webview/Lib.java")
                        for f in findings), "negative cases were flagged"
         assert [f.id.rsplit("-", 1)[0] for f in findings if f.affected_component == "com/test/vuln/CryptoClass.java"] \
             == ["CRYPTO-HARDCODED-KEY"], "two-hop hardcoded key not detected"
