@@ -16,9 +16,10 @@ def _tool(name: str) -> list[str]:
     return [path]
 
 
-def _run(cmd: list[str], step: str):
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
+def _run(cmd: list[str], step: str, ok=(0,)):
+    # errors="replace": tool logs may contain bytes the console codepage can't decode (e.g. obfuscated class names)
+    result = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
+    if result.returncode not in ok:
         raise RuntimeError(f"{step} failed: {result.stderr}")
 
 
@@ -50,5 +51,6 @@ class APKExtractor:
 
     def decompile_source(self) -> Path:
         """Decompiles bytecode into Java source code with jadx."""
-        _run(_tool("jadx") + ["-d", str(self.java_dir), str(self.apk_path)], "jadx decompilation")
+        # jadx exits 3 when output is saved but some methods failed to decompile, which is normal for real apps
+        _run(_tool("jadx") + ["-d", str(self.java_dir), str(self.apk_path)], "jadx decompilation", ok=(0, 3))
         return self.java_dir
