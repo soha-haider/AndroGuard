@@ -1,55 +1,32 @@
-import os
 import subprocess
-import xml.etree.ElementTree as ET
-from typing import Dict, Any, List
+from pathlib import Path
 
 class APKExtractor:
-    def __init__(self, apk_path: str, output_dir: str):
-        self.apk_path = apk_path
-        self.output_dir = output_dir
+    def __init__(self, file_path: Path, workspace_dir: Path):
+        self.file_path = Path(file_path)
+        self.workspace_dir = Path(workspace_dir)
+        self.decompiled_dir = self.workspace_dir / "decompiled"
+        self.java_dir = self.workspace_dir / "jadx_src"
+        self.is_aab = self.file_path.suffix.lower() == ".aab"
 
-    def decompile_apktool(self) -> str:
-        """Decompiles APK using Apktool to extract resources and AndroidManifest.xml."""
-        decompiled_path = os.path.join(self.output_dir, "apktool_out")
-        cmd = ["apktool", "d", self.apk_path, "-o", decompiled_path, "-f"]
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return decompiled_path
+    def decode_resources(self) -> Path:
+        """Decodes AndroidManifest.xml and resources (apktool for APK, jadx for AAB)."""
+        if self.is_aab:
+            # JADX decodes proto-format resources and manifests directly from AAB files
+            cmd = ["jadx", "-d", str(self.decompiled_dir), "--e-res", str(self.file_path)]
+        else:
+            # Standard apktool decoding for APK files
+            cmd = ["apktool", "d", str(self.file_path), "-o", str(self.decompiled_dir), "-f"]
+            
+        result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Resource decoding failed: {result.stderr}")
+        return self.decompiled_dir
 
-    def decompile_jadx(self) -> str:
-        """Decompiles APK to Java source code using JADX."""
-        jadx_out_path = os.path.join(self.output_dir, "jadx_out")
-        cmd = ["jadx", "-d", jadx_out_path, self.apk_path]
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return jadx_out_path
-
-    def parse_manifest(self, apktool_dir: str) -> Dict[str, Any]:
-        """Parses AndroidManifest.xml to extract package info, permissions, and components."""
-        manifest_path = os.path.join(apktool_dir, "AndroidManifest.xml")
-        if not os.path.exists(manifest_path):
-            raise FileNotFoundError(f"Manifest not found at {manifest_path}")
-
-        tree = ET.parse(manifest_path)
-        root = tree.getroot()
-
-        package_name = root.attrib.get("package", "Unknown")
-        permissions = [
-            elem.attrib.get("{http://schemas.android.com/apk/res/android}name")
-            for elem in root.findall("uses-permission")
-        ]
-
-        # Extract components
-        application = root.find("application")
-        exported_components = []
-        if application is not None:
-            for tag in ["activity", "service", "receiver", "provider"]:
-                for comp in application.findall(tag):
-                    is_exported = comp.attrib.get("{http://schemas.android.com/apk/res/android}exported")
-                    if is_exported == "true":
-                        name = comp.attrib.get("{http://schemas.android.com/apk/res/android}name")
-                        exported_components.append({"type": tag, "name": name})
-
-        return {
-            "package_name": package_name,
-            "permissions": permissions,
-            "exported_components": exported_components
-        }
+    def decompile_source(self) -> Path:
+        """Decompiles bytecode into Java source code (compatible with both APK and AAB)."""
+        cmd = ["jadx", "-d", str(self.java_dir), str(self.file_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"jadx decompilation failed: {result.stderr}")
+        return self.java_dir
