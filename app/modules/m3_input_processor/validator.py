@@ -20,6 +20,8 @@ def validate_package(file_path: Path) -> tuple[str, str]:
     with zipfile.ZipFile(file_path) as zf:
         if MANIFEST_ENTRY[ext] not in zf.namelist():
             raise ValueError(f"Missing {MANIFEST_ENTRY[ext]}; not a valid {ext.upper()[1:]}")
+    sha256 = hashlib.sha256()  # chunked instead of hashlib.file_digest, which needs Python 3.11+ (Ubuntu 22.04 has 3.10)
     with open(file_path, "rb") as f:
-        sha256 = hashlib.file_digest(f, "sha256").hexdigest()
-    return ext[1:], sha256
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            sha256.update(chunk)
+    return ext[1:], sha256.hexdigest()

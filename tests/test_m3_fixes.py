@@ -9,6 +9,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from app.modules.m3_input_processor.validator import validate_package
 from app.modules.m3_input_processor.deps import extract_dependencies, DependencyScanner
+from app.modules.m3_input_processor.extractor import _run
 
 
 def _zip(path: Path, entries: dict) -> Path:
@@ -53,6 +54,17 @@ def test_m3_fixes():
             f = DependencyScanner().scan_apk(apk)
         assert len(f) == 2 and f[0].severity == "MEDIUM" and f[0].cve == "CVE-2022-25647"
         assert f[0].references == ["https://example.com"]
+
+    # jadx.bat on Windows exits 1 even for "finished with errors" (partial output is fine); real failures must raise
+    fake_tool = [sys.executable, "-c"]
+    _run(fake_tool + ["print('ERROR - finished with errors, count: 150'); raise SystemExit(1)"], "jadx", (0, 3),
+         ok_marker="finished with errors")
+    try:
+        _run(fake_tool + ["print('ERROR - Process error: boom'); raise SystemExit(1)"], "jadx", (0, 3),
+             ok_marker="finished with errors")
+        assert False, "real jadx failure was swallowed"
+    except RuntimeError as e:
+        assert "exit code 1" in str(e) and "Process error: boom" in str(e)
     print("[OK] M3 fixes check passed")
 
 

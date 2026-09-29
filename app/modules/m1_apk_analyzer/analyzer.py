@@ -17,8 +17,8 @@ KB = {
         "A PEM private key block is shipped inside the package.",
         "Anyone can extract the key from the APK and impersonate the app/server or decrypt protected data.",
         "Remove the key from the package; keep private keys server-side or generate them in the Android Keystore."),
-    "SECRET-CREDENTIAL": (HS, "Hardcoded password or secret", "HIGH", 0.6, ["MASVS-STORAGE-1"], ["MASWE-0004"],
-        "A password/secret-named variable or string resource holds a literal value.",
+    "SECRET-CREDENTIAL": (HS, "Hardcoded password", "HIGH", 0.6, ["MASVS-STORAGE-1"], ["MASWE-0004"],
+        "A password-named variable or string resource holds a literal value (API secrets are covered by M2).",
         "Hardcoded credentials are recoverable by decompiling the APK and give attackers direct access.",
         "Remove hardcoded credentials; authenticate against a server and keep user secrets in the Android Keystore."),
     "STORAGE-BACKUP": (DS, "Application data backup enabled", "MEDIUM", 0.9, ["MASVS-STORAGE-2"], ["MASWE-0006"],
@@ -142,9 +142,9 @@ CODE_RULES = {k: re.compile(v) for k, v in {
     "SECRET-PRIVATE-KEY": r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----",
     "SECRET-CREDENTIAL":  # skips validation/UI names such as PASSWORD_PATTERN or passwordHint
         r'(?i)\b(?!\w*(?:pattern|regex|format|hint|label|message|msg|error|title|text|field|view)\w*\s*=)'
-        r'\w*(?:password|passwd|pwd|secret|passphrase)\w*\s*=\s*"'
+        r'\w*(?:password|passwd|pwd|passphrase)\w*\s*=\s*"'
         r'(?!(?-i:[a-z_.]*(?:pass|pwd|secret)[a-z_.]*)")(?![^"]*\s)[^"]{4,}"'  # skip key names like "pref_password"
-        r'|<string name="[^"]*(?:password|passwd|pwd|secret)[^"]*">(?![^<]*(?:pass|pwd|secret))(?![^<]*\s)[^<]{4,}</string>',
+        r'|<string name="[^"]*(?:password|passwd|pwd)[^"]*">(?![^<]*(?:pass|pwd|secret))(?![^<]*\s)[^<]{4,}</string>',
     "STORAGE-WORLD-MODE":
         r"MODE_WORLD_(?:READABLE|WRITEABLE)"
         r"|\b(?:openFileOutput|getSharedPreferences|openOrCreateDatabase|getDir)\([^,;]+,\s*[123]\s*[,)]",
@@ -189,8 +189,8 @@ COMPONENTS = ("activity", "activity-alias", "service", "receiver", "provider")
 LAUNCHER_CATEGORIES = {"android.intent.category.LAUNCHER", "android.intent.category.LEANBACK_LAUNCHER"}
 
 
-def _finding(rule_id, component, evidence, severity=None) -> StandardFinding:
-    category, title, sev, confidence, masvs, maswe, cause, description, remediation = KB[rule_id]
+def _finding(rule_id, component, evidence, severity=None, kb=KB) -> StandardFinding:
+    category, title, sev, confidence, masvs, maswe, cause, description, remediation = kb[rule_id]
     return StandardFinding(id=rule_id, title=title, severity=severity or sev, description=description,
                            category=category, cause=cause, evidence=evidence, affected_component=component,
                            confidence=confidence, masvs=masvs, maswe=maswe, remediation=remediation)
@@ -302,9 +302,10 @@ def _text_files(decompiled_dir: Path, java_dir: Path, app_prefix: str):
         rel = p.relative_to(src).as_posix()
         if not rel.startswith(LIBRARY_PREFIXES) or rel.startswith(app_prefix):
             yield rel, p
-    yield from ((p.relative_to(decompiled_dir).as_posix(), p) for p in (decompiled_dir / "res").glob("values*/strings.xml"))
-    for p in (decompiled_dir / "assets").rglob("*"):
-        if p.is_file() and p.stat().st_size < 1_000_000:
+    resources = [decompiled_dir / "AndroidManifest.xml", *(decompiled_dir / "res").glob("values*/strings.xml"),
+                 *(decompiled_dir / "assets").rglob("*")]  # manifest: API keys often sit in <meta-data>
+    for p in resources:  # 32 MB cap: React Native/Hermes bundles (the app's whole JS logic) sit in assets at several MB
+        if p.is_file() and p.stat().st_size < 32_000_000:
             yield p.relative_to(decompiled_dir).as_posix(), p
 
 
@@ -317,22 +318,36 @@ def _assigned_literal(name: str, text: str, hops: int = 1) -> bool:
     return bool(m) and (m.group(1) is None or (hops > 0 and _assigned_literal(m.group(1), text, hops - 1)))
 
 
-def _code_findings(decompiled_dir: Path, java_dir: Path, app_prefix: str) -> list[StandardFinding]:
+def _code_findings(decompiled_dir: Path, java_dir: Path, app_prefix: str, rules=CODE_RULES, kb=KB) -> list[StandardFinding]:
     out = []
     for rel, path in _text_files(decompiled_dir, java_dir, app_prefix):
         text = path.read_text(encoding="utf-8", errors="ignore")
         lines = text.split("\n")
-        for rule_id, rx in CODE_RULES.items():
+        for rule_id, rx in rules.items():
             hits = []
             for m in rx.finditer(text):
                 ref = m.groupdict().get("ref")
                 if ref and not _assigned_literal(ref, text):
                     continue
                 line = text.count("\n", 0, m.start()) + 1
-                hits.append(f"L{line}: {lines[line - 1].strip()[:200]}")
+                snippet = lines[line - 1].strip()
+                if len(snippet) > 200:  # minified JS / bytecode: show the match's surroundings, not the line start
+                    snippet = re.sub(r"[\x00-\x1f\x7f-\x9f]+", " ", text[max(0, m.start() - 40):m.start() + 160])
+                hits.append(f"L{line}: {snippet}")
             if hits:
-                out.append(_finding(rule_id, rel, hits[:5] + ([f"... {len(hits) - 5} more"] if len(hits) > 5 else [])))
+                out.append(_finding(rule_id, rel, hits[:5] + ([f"... {len(hits) - 5} more"] if len(hits) > 5 else []),
+                                    kb=kb))
     return out
+
+
+def _rank(findings: list[StandardFinding]) -> list[StandardFinding]:
+    """Sorts by severity and numbers ids per rule, e.g. EXPORTED-COMPONENT-2."""
+    findings.sort(key=lambda f: SEVERITIES.index(f.severity))
+    seen = Counter()
+    for f in findings:
+        seen[f.id] += 1
+        f.id = f"{f.id}-{seen[f.id]}"
+    return findings
 
 
 def analyze(decompiled_dir: Path, java_dir: Path) -> list[StandardFinding]:
@@ -340,10 +355,4 @@ def analyze(decompiled_dir: Path, java_dir: Path) -> list[StandardFinding]:
     decompiled_dir, java_dir = Path(decompiled_dir), Path(java_dir)
     man = ET.parse(decompiled_dir / "AndroidManifest.xml").getroot()
     app_prefix = man.get("package", "").replace(".", "/") + "/"
-    findings = _manifest_findings(man, decompiled_dir) + _code_findings(decompiled_dir, java_dir, app_prefix)
-    findings.sort(key=lambda f: SEVERITIES.index(f.severity))
-    seen = Counter()
-    for f in findings:  # rule id + running number, e.g. EXPORTED-COMPONENT-2
-        seen[f.id] += 1
-        f.id = f"{f.id}-{seen[f.id]}"
-    return findings
+    return _rank(_manifest_findings(man, decompiled_dir) + _code_findings(decompiled_dir, java_dir, app_prefix))

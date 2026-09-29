@@ -1,3 +1,4 @@
+import sys
 import zipfile
 import requests
 from pathlib import Path
@@ -69,5 +70,5 @@ class DependencyScanner:
                         raw_data=vuln
                     ))
         except Exception as e:
-            print(f"[!] OSV lookup error for {package_name}: {e}")
+            print(f"[!] OSV lookup error for {package_name}: {e}", file=sys.stderr)  # stdout carries the JSON report
         return findings
