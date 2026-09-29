@@ -1,6 +1,5 @@
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
-
 class StandardFinding(BaseModel):
     id: str = Field(..., description="Unique vulnerability identifier (e.g. OSV-2023-XXXX or CVE-2023-XXXX)")
     title: str = Field(..., description="Short title describing the finding")
