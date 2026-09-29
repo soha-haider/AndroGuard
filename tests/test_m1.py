@@ -73,8 +73,12 @@ SAFE = """package com.test.vuln;
 public class Safe {
     public static final String PREF_PASSWORD = "pref_password";
     String passwordHint = "Min 8 chars";
+    private static final String PASSWORD_PATTERN = "((?=.*[0-9])(?=.*[a-z]).{6,20})";
+    String dynamicKey = loadKey();
     void run() throws Exception {
         String str = "abc";
+        byte[] kb = this.dynamicKey.getBytes("UTF-8");
+        new SecretKeySpec(kb, "AES");
         openFileOutput("x", 0);
         getSharedPreferences("prefs", 32768);
         Cipher.getInstance("AES/GCM/NoPadding");
@@ -89,6 +93,20 @@ public class Safe {
     }
     public void checkServerTrusted(X509Certificate[] chain, String str) throws CertificateException {
         this.delegate.checkServerTrusted(chain, str);
+    }
+}"""
+
+# InsecureBankv2 shape: the key reaches SecretKeySpec through a local and a method parameter
+TWO_HOP_KEY = """package com.test.vuln;
+public class CryptoClass {
+    String key = "This is the super secret key 123";
+    public static byte[] enc(byte[] keyBytes, byte[] data) throws Exception {
+        SecretKeySpec newKey = new SecretKeySpec(keyBytes, "AES");
+        return data;
+    }
+    public byte[] run(byte[] data) throws Exception {
+        byte[] keyBytes = this.key.getBytes("UTF-8");
+        return enc(keyBytes, data);
     }
 }"""
 
@@ -114,6 +132,7 @@ def test_m1():
         _write(dec, "assets/key.pem", "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\n")
         _write(jadx, "sources/com/test/vuln/Vuln.java", VULN)
         _write(jadx, "sources/com/test/vuln/Safe.java", SAFE)
+        _write(jadx, "sources/com/test/vuln/CryptoClass.java", TWO_HOP_KEY)
         _write(jadx, "sources/androidx/crypto/Lib.java", 'Cipher.getInstance("DES");')
 
         findings = analyze(dec, jadx)
@@ -123,6 +142,8 @@ def test_m1():
         by_component = {f.affected_component: f for f in findings}
         assert not any(f.affected_component in ("Safe.java", "com/test/vuln/Safe.java", "androidx/crypto/Lib.java")
                        for f in findings), "negative cases were flagged"
+        assert [f.id.rsplit("-", 1)[0] for f in findings if f.affected_component == "com/test/vuln/CryptoClass.java"] \
+            == ["CRYPTO-HARDCODED-KEY"], "two-hop hardcoded key not detected"
         exported = {f.affected_component for f in findings if f.category == "Exported Components"}
         assert exported == {".Transfer", ".WeakService", ".Recv", ".Prov"}, exported
         assert by_component[".Prov"].severity == "HIGH"

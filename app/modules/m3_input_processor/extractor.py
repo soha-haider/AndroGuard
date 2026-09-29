@@ -18,7 +18,8 @@ def _tool(name: str) -> list[str]:
 
 def _run(cmd: list[str], step: str, ok=(0,)):
     # errors="replace": tool logs may contain bytes the console codepage can't decode (e.g. obfuscated class names)
-    result = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
+    # stdin=DEVNULL: apktool.bat calls `pause` when run via cmd /c, which would otherwise hang waiting for a key
+    result = subprocess.run(cmd, capture_output=True, text=True, errors="replace", stdin=subprocess.DEVNULL)
     if result.returncode not in ok:
         raise RuntimeError(f"{step} failed: {result.stderr}")
 

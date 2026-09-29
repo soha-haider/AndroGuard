@@ -137,11 +137,12 @@ KB = {
 }
 
 # Rules matched against decompiled Java, string resources and assets. A named group "ref" means the match
-# points at an identifier that only counts if the same file assigns it a literal (e.g. a hardcoded key field).
+# points at an identifier that only counts if the same file assigns it a literal (see _assigned_literal).
 CODE_RULES = {k: re.compile(v) for k, v in {
     "SECRET-PRIVATE-KEY": r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----",
-    "SECRET-CREDENTIAL":
-        r'(?i)\b\w*(?:password|passwd|pwd|secret|passphrase)\w*\s*=\s*"'
+    "SECRET-CREDENTIAL":  # skips validation/UI names such as PASSWORD_PATTERN or passwordHint
+        r'(?i)\b(?!\w*(?:pattern|regex|format|hint|label|message|msg|error|title|text|field|view)\w*\s*=)'
+        r'\w*(?:password|passwd|pwd|secret|passphrase)\w*\s*=\s*"'
         r'(?!(?-i:[a-z_.]*(?:pass|pwd|secret)[a-z_.]*)")(?![^"]*\s)[^"]{4,}"'  # skip key names like "pref_password"
         r'|<string name="[^"]*(?:password|passwd|pwd|secret)[^"]*">(?![^<]*(?:pass|pwd|secret))(?![^<]*\s)[^<]{4,}</string>',
     "STORAGE-WORLD-MODE":
@@ -307,6 +308,15 @@ def _text_files(decompiled_dir: Path, java_dir: Path, app_prefix: str):
             yield p.relative_to(decompiled_dir).as_posix(), p
 
 
+def _assigned_literal(name: str, text: str, hops: int = 1) -> bool:
+    """True if the file assigns `name` a string/array literal, directly or via one `name = other.getBytes(..)` hop."""
+    # ponytail: same-file name matching, no real data flow; FlowDroid/taint analysis is the upgrade path
+    if JADX_LOCAL.fullmatch(name):
+        return False
+    m = re.search(rf'\b{name}\s*=\s*(?:"|\{{|new byte\[\]\s*\{{|(?:this\.)?(\w+)\.getBytes\()', text)
+    return bool(m) and (m.group(1) is None or (hops > 0 and _assigned_literal(m.group(1), text, hops - 1)))
+
+
 def _code_findings(decompiled_dir: Path, java_dir: Path, app_prefix: str) -> list[StandardFinding]:
     out = []
     for rel, path in _text_files(decompiled_dir, java_dir, app_prefix):
@@ -316,8 +326,7 @@ def _code_findings(decompiled_dir: Path, java_dir: Path, app_prefix: str) -> lis
             hits = []
             for m in rx.finditer(text):
                 ref = m.groupdict().get("ref")
-                if ref and (JADX_LOCAL.fullmatch(ref)
-                            or not re.search(rf'\b{ref}\s*=\s*(?:"|\{{|new byte\[\]\s*\{{)', text)):
+                if ref and not _assigned_literal(ref, text):
                     continue
                 line = text.count("\n", 0, m.start()) + 1
                 hits.append(f"L{line}: {lines[line - 1].strip()[:200]}")
