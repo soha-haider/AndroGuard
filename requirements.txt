@@ -11,3 +11,5 @@ weasyprint
 jinja2
 psycopg2-binary
 sqlalchemy
+python-multipart
+httpx
