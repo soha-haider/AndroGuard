@@ -9,6 +9,8 @@ os.environ["DATABASE_URL"] = f"sqlite:///{(Path(tempfile.mkdtemp()) / 'test.db')
 
 from fastapi.testclient import TestClient
 import app.api as api
+from app import auth
+from app.database import Session, User
 
 SEEN = []
 REPORT = {"file": "demo.apk", "type": "apk", "sha256": "ab" * 32,
@@ -24,7 +26,11 @@ def fake_scan(path, progress):
     progress("[*] scanning")
     if "broken" in open(path, "rb").read().decode():
         raise ValueError("Missing AndroidManifest.xml; not a valid APK")
-    return REPORT
+    return dict(REPORT)
+
+
+def upload(client, name="demo.apk", body=b"fine"):
+    return client.post("/api/scans", files={"file": (name, body)})
 
 
 def wait(client, scan_id):
@@ -36,29 +42,90 @@ def wait(client, scan_id):
     raise AssertionError("scan never finished")
 
 
+def login(client, email, password):
+    return client.post("/api/auth/login", json={"email": email, "password": password})
+
+
 def test_api():
     api.scan = fake_scan
-    client = TestClient(api.app)
-    assert client.post("/api/scans", files={"file": ("notes.txt", b"x")}).status_code == 400
-    assert client.post("/api/scans", files={"file": ("../evil.apk", b"x")}).status_code == 202  # path stripped to evil.apk
+    assert auth.verify_password("pw-12345678", auth.hash_password("pw-12345678"))
+    assert not auth.verify_password("wrong", auth.hash_password("pw-12345678"))
 
-    ok = wait(client, client.post("/api/scans", files={"file": ("My App (1).apk", b"fine")}).json()["id"])
-    assert ok["status"] == "done" and ok["report"]["risk"]["level"] == "HIGH" and ok["sha256"] == "ab" * 32
-    assert ok["report"]["file"] == "My App (1).apk", "report shows the temp upload name"
+    # free trial: 3 scans per browser, then an account is required
+    anon = TestClient(api.app)
+    assert anon.get("/api/auth/me").json() == {"user": None, "quota": {"used": 0, "limit": 3}}
+    assert upload(anon, "notes.txt").status_code == 400
+    ids = [upload(anon).json()["id"] for _ in range(3)]
+    for i in ids:
+        wait(anon, i)
+    blocked = upload(anon)
+    assert blocked.status_code == 403 and "3 free scans" in blocked.json()["detail"]
+    other = TestClient(api.app)  # another browser sees none of it
+    assert other.get(f"/api/scans/{ids[0]}").status_code == 404 and other.get("/api/scans").json() == []
+
+    # sign up: the trial scans move into the account, which gets its own quota
+    r = anon.post("/api/auth/signup", json={"email": "Aisha@Example.com", "password": "correct horse", "name": "Aisha"})
+    assert r.status_code == 201 and r.json()["user"]["email"] == "aisha@example.com"
+    assert anon.get("/api/auth/me").json()["quota"] == {"used": 3, "limit": api.DEFAULT_USER_LIMIT}
+    assert len(anon.get("/api/scans").json()) == 3
+    assert anon.post("/api/auth/signup", json={"email": "aisha@example.com", "password": "another-pass"}).status_code == 409
+    assert anon.post("/api/auth/signup", json={"email": "not-an-email", "password": "long-enough"}).status_code == 422
+
+    ok = wait(anon, upload(anon, "My App (1).apk").json()["id"])
+    assert ok["status"] == "done" and ok["report"]["file"] == "My App (1).apk"
+    page = anon.get(f"/api/scans/{ok['id']}/report.html").text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page and "<script>alert" not in page, "report is not escaped"
+    bad = wait(anon, upload(anon, "x.apk", b"broken").json()["id"])
+    assert bad["status"] == "failed" and "not a valid APK" in bad["error"]
+    assert anon.get(f"/api/scans/{bad['id']}/report.html").status_code == 409
     assert all(not p.exists() for p in SEEN), "uploaded package outlived its scan"
     assert all(p.parent == api.UPLOADS and p.stem.isalnum() for p in SEEN), "user file name reached the tools"
 
-    bad = wait(client, client.post("/api/scans", files={"file": ("x.apk", b"broken")}).json()["id"])
-    assert bad["status"] == "failed" and "not a valid APK" in bad["error"]
+    anon.post("/api/auth/logout")
+    assert anon.get("/api/auth/me").json()["user"] is None
+    for _ in range(5):
+        assert login(anon, "aisha@example.com", "wrong-password").status_code == 401
+    assert login(anon, "aisha@example.com", "correct horse").status_code == 429  # locked for 15 minutes
+    auth._failures.clear()
 
-    listed = client.get("/api/scans").json()
-    assert [s["status"] for s in listed][:2] == ["failed", "done"] and listed[1]["findings"] == 1
-    page = client.get(f"/api/scans/{ok['id']}/report.html").text
-    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page and "<script>alert" not in page, "report is not escaped"
-    assert client.get(f"/api/scans/{bad['id']}/report.html").status_code == 409
-    assert client.get("/api/scans/9999").status_code == 404
-    assert "AndroGuard" in client.get("/").text
-    print(f"[OK] API check passed: {len(listed)} scans, upload -> scan -> report flow, cleanup and escaping")
+    # CRM access: users no, admins yes, the superadmin for roles and deletes
+    bilal = TestClient(api.app)
+    bilal.post("/api/auth/signup", json={"email": "bilal@example.com", "password": "bilal-pass-1"})
+    assert bilal.get("/api/admin/stats").status_code == 403 and TestClient(api.app).get("/api/admin/stats").status_code == 401
+    with Session() as s:
+        s.add(User(email="root@example.com", password_hash=auth.hash_password("root-pass-123"), role="superadmin"))
+        s.commit()
+    root = TestClient(api.app)
+    assert login(root, "root@example.com", "root-pass-123").status_code == 200
+    st = root.get("/api/admin/stats").json()
+    assert st["users"] == 3 and st["scans"] == 5 and st["failed"] == 1 and st["converted_devices"] == 1
+    assert len(st["per_day"]) == 14 and st["per_day"][-1]["scans"] == 5
+    users = {u["email"]: u for u in root.get("/api/admin/users").json()}
+    aisha_id, bilal_id, root_id = (users[e]["id"] for e in ("aisha@example.com", "bilal@example.com", "root@example.com"))
+    assert users["aisha@example.com"]["scans_used"] == 4  # 3 trial + 1; the failed scan does not count
+
+    assert root.patch(f"/api/admin/users/{bilal_id}", json={"role": "admin"}).json()["role"] == "admin"
+    assert bilal.get("/api/admin/stats").status_code == 200
+    patched = bilal.patch(f"/api/admin/users/{aisha_id}", json={"scan_limit": 4, "notes": "Pilot customer"}).json()
+    assert patched["scan_limit"] == 4 and patched["notes"] == "Pilot customer"
+    assert bilal.patch(f"/api/admin/users/{aisha_id}", json={"role": "admin"}).status_code == 403
+    assert bilal.patch(f"/api/admin/users/{root_id}", json={"status": "blocked"}).status_code == 403
+    assert bilal.patch(f"/api/admin/users/{bilal_id}", json={"scan_limit": None}).status_code == 403  # admins can't edit admins
+    assert bilal.delete(f"/api/admin/users/{aisha_id}").status_code == 403
+
+    aisha = TestClient(api.app)
+    assert login(aisha, "aisha@example.com", "correct horse").status_code == 200
+    limited = upload(aisha)
+    assert limited.status_code == 403 and "scan limit" in limited.json()["detail"]
+    assert len(root.get("/api/admin/scans").json()) == 5 and root.get(f"/api/scans/{ids[0]}").status_code == 200
+    root.patch(f"/api/admin/users/{aisha_id}", json={"status": "blocked"})
+    assert aisha.get("/api/auth/me").json()["user"] is None, "blocked user still signed in"
+    assert login(aisha, "aisha@example.com", "correct horse").status_code == 403
+    assert root.delete(f"/api/admin/users/{aisha_id}").json()["ok"]
+    assert root.get(f"/api/scans/{ids[0]}").status_code == 404, "deleted user's scans remain"
+    assert root.delete(f"/api/admin/users/{root_id}").status_code == 403
+    assert "AndroGuard" in anon.get("/").text
+    print("[OK] API check passed: free trial quota, ownership, signup claim, login limit, roles, block and delete")
 
 
 if __name__ == "__main__":

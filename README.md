@@ -17,6 +17,7 @@ LVDAndro nudges the risk and explains itself with SHAP. Findings map to OWASP MA
 | Scan one app | `python -m app app.apk report.json` |
 | Scan a folder (PowerShell) | `Get-ChildItem C:\apks\*.apk \| ForEach-Object { python -m app $_.FullName "$($_.DirectoryName)\$($_.BaseName)-report.json" }` |
 | Web app | `uvicorn app.api:app` then open http://127.0.0.1:8000 (SQLite by default, `DATABASE_URL` for PostgreSQL) |
+| Create the superadmin (CRM) | `python -m app.manage create-superadmin you@example.com` (password from `ANDROGUARD_PASSWORD` or a prompt) |
 | Retrain the ML model | `python -m app.modules.ml.code_model data/lvdandro/LVDAndro_SourceFiles_MobSF_Processed.csv` |
 | Benchmark | `python -m eval.benchmark` (APKs in `data/apks/`, results in `eval/results.md`) |
 | Tests | `python tests/test_m1.py` (also `test_m2`, `test_m3_fixes`, `test_m4`, `test_api`) |
