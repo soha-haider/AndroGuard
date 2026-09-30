@@ -3,128 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AndroGuard</title>
-<style>
-:root{--bg:#f7f7f5;--card:#fff;--ink:#1b1b1b;--muted:#5f5e5a;--line:#e1e0d9;--accent:#2a78d6;--high:#a32d2d;--med:#854f0b;--low:#444441}
-@media (prefers-color-scheme: dark){:root{--bg:#141413;--card:#1e1e1d;--ink:#f0efec;--muted:#b4b2a9;--line:#2c2c2a;--accent:#3987e5;--high:#f09595;--med:#fac775;--low:#b4b2a9}}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Segoe UI",system-ui,sans-serif}
-main{max-width:1100px;margin:0 auto;padding:24px 16px}
-h1{font-size:22px;margin:0}h2{font-size:17px;margin:0 0 12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin-bottom:16px;overflow-x:auto}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
-.row{cursor:pointer}.row:hover,.row:focus,.sel{background:var(--bg);outline:none}
-.pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600;border:1px solid currentColor}
-.HIGH,.CRITICAL{color:var(--high)}.MEDIUM{color:var(--med)}.LOW,.INFO,.UNKNOWN{color:var(--low)}
-.muted{color:var(--muted)}.err{color:var(--high)}code{font:12px Consolas,monospace;word-break:break-all}
-button,.btn{font:inherit;padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;text-decoration:none}
-.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-</style>
+<title>AndroGuard: security scanner for Android apps</title>
+<meta name="description" content="Upload an APK or AAB and get evidence-backed security findings ranked by exploitability and mapped to OWASP MASVS. Three scans free.">
+<!-- Phosphor shield-check-fill, in the accent colour -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256' fill='%230a7a55'><path d='M208,40H48A16,16,0,0,0,32,56v56c0,52.72,25.52,84.67,46.93,102.19,23.06,18.86,46,25.26,47,25.53a8,8,0,0,0,4.2,0c1-.27,23.91-6.67,47-25.53C198.48,196.67,224,164.72,224,112V56A16,16,0,0,0,208,40Zm-34.32,69.66-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32Z'/></svg>">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<main id="root"><p>Loading…</p></main>
+<div id="root"></div>
+<noscript>AndroGuard needs JavaScript to upload and show scans.</noscript>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js"></script>
-<script>
-// ponytail: React from a CDN with htm templates - no build step. Move to Vite when the UI grows past one file.
-const {useState, useEffect} = React;
-const html = htm.bind(React.createElement);
-const api = (path, opts) => fetch(path, opts).then(async r => r.ok ? r.json()
-  : Promise.reject(new Error((await r.json().catch(() => ({}))).detail || r.statusText)));
-const onKey = fn => e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(); } };
-const active = s => s.status === "queued" || s.status === "running";
-
-function Upload({onDone}) {
-  const [file, setFile] = useState(null), [busy, setBusy] = useState(false), [err, setErr] = useState("");
-  const submit = async e => {
-    e.preventDefault();
-    if (!file) return setErr("Choose an .apk or .aab file first");
-    const body = new FormData();
-    body.append("file", file);
-    setBusy(true); setErr("");
-    try { const {id} = await api("/api/scans", {method: "POST", body}); e.target.reset(); setFile(null); onDone(id); }
-    catch (x) { setErr(x.message); }
-    finally { setBusy(false); }
-  };
-  return html`<form className="card" onSubmit=${submit}>
-    <h2>Scan an app</h2>
-    <input type="file" accept=".apk,.aab" aria-label="APK or AAB file" onChange=${e => { setFile(e.target.files[0]); setErr(""); }} />
-    <button className="primary" disabled=${busy} style=${{marginLeft: "8px"}}>${busy ? "Uploading…" : "Upload and scan"}</button>
-    ${err && html`<div className="err" role="alert">${err}</div>`}
-    <div className="muted" style=${{marginTop: "6px"}}>The package is analysed on this server and deleted when its scan ends.</div>
-  </form>`;
-}
-
-function ScanList({scans, selected, onSelect}) {
-  if (!scans.length) return html`<div className="card muted">No scans yet.</div>`;
-  return html`<div className="card"><h2>Scans</h2><table>
-    <thead><tr><th>File</th><th>Status</th><th>App risk</th><th>Findings</th><th>Started</th></tr></thead>
-    <tbody>${scans.map(s => html`<tr key=${s.id} tabIndex="0" className=${s.id === selected ? "row sel" : "row"}
-        onClick=${() => onSelect(s.id)} onKeyDown=${onKey(() => onSelect(s.id))}>
-      <td>${s.filename}</td>
-      <td>${s.status}${active(s) && html`<div className="muted">${s.progress}</div>`}${s.status === "failed" && html`<div className="err">${(s.error || "").slice(-160)}</div>`}</td>
-      <td>${s.risk ? html`<span className=${"pill " + s.risk.level}>${s.risk.level}</span> ${s.risk.score}` : "—"}</td>
-      <td>${s.status === "done" ? s.findings : "—"}</td>
-      <td className="muted">${s.created_at ? new Date(s.created_at).toLocaleString() : ""}</td></tr>`)}</tbody></table></div>`;
-}
-
-function Finding({f}) {
-  const [open, setOpen] = useState(false);
-  const toggle = () => setOpen(!open);
-  return html`<${React.Fragment}>
-    <tr tabIndex="0" className="row" aria-expanded=${open} onClick=${toggle} onKeyDown=${onKey(toggle)}>
-      <td>${f.risk_score}</td><td><span className=${"pill " + f.severity}>${f.severity}</span></td>
-      <td>${f.exploitability}</td><td>${f.title}<div className="muted">${f.category}</div></td>
-      <td><code>${f.affected_component}</code></td></tr>
-    ${open && html`<tr><td colSpan="5">
-      <div>${f.description}</div>
-      <b>Evidence</b><ul>${(f.evidence || []).map((x, i) => html`<li key=${i}><code>${x}</code></li>`)}</ul>
-      <b>Why this exploitability</b><ul>${(f.exploit_factors || []).map((x, i) => html`<li key=${i}>${x}</li>`)}</ul>
-      ${f.related && f.related.length > 0 && html`<div><b>Related findings:</b> ${f.related.join(", ")}</div>`}
-      <div><b>OWASP:</b> ${[...(f.masvs || []), ...(f.maswe || [])].join(", ")}</div>
-      <div><b>Remediation:</b> ${f.remediation}</div></td></tr>`}
-  </${React.Fragment}>`;
-}
-
-function ScanDetail({id}) {
-  const [scan, setScan] = useState(null), [err, setErr] = useState("");
-  useEffect(() => {
-    let timer;
-    const load = () => api(`/api/scans/${id}`).then(s => { setScan(s); if (active(s)) timer = setTimeout(load, 3000); })
-      .catch(x => setErr(x.message));
-    load();
-    return () => clearTimeout(timer);
-  }, [id]);
-  if (err) return html`<div className="card err">${err}</div>`;
-  if (!scan) return html`<div className="card muted">Loading…</div>`;
-  if (scan.status !== "done") return html`<div className="card"><h2>${scan.filename}</h2>
-    <div className=${scan.status === "failed" ? "err" : "muted"}>${scan.status}: ${scan.status === "failed" ? scan.error : scan.progress}</div></div>`;
-  const r = scan.report, risk = r.risk;
-  return html`<div className="card">
-    <div style=${{display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "8px"}}>
-      <h2>${r.file}</h2>
-      <span><a className="btn" href=${`/api/scans/${id}/report.html`} target="_blank" rel="noopener">HTML report</a> <a className="btn primary" href=${`/api/scans/${id}/report.pdf`}>Download PDF</a></span></div>
-    <div className="muted">SHA-256 ${r.sha256}</div>
-    <p>App risk <span className=${"pill " + risk.level}>${risk.level}</span> ${risk.score}/100 · ${r.findings.length} findings ·
-      exploitability HIGH ${risk.exploitability.HIGH}, MEDIUM ${risk.exploitability.MEDIUM}, LOW ${risk.exploitability.LOW} ·
-      ${risk.in_attack_chains.length} in attack chains</p>
-    <table><thead><tr><th>Risk</th><th>Severity</th><th>Exploitability</th><th>Finding</th><th>Affected</th></tr></thead>
-      <tbody>${r.findings.map(f => html`<${Finding} key=${f.id} f=${f} />`)}</tbody></table>
-    <div className="muted">Sorted by risk. Select a finding for its evidence, the reasons behind its exploitability and the fix.</div></div>`;
-}
-
-function App() {
-  const [scans, setScans] = useState([]), [selected, setSelected] = useState(null);
-  const refresh = () => api("/api/scans").then(setScans).catch(() => {});
-  useEffect(() => { refresh(); const t = setInterval(refresh, 3000); return () => clearInterval(t); }, []);
-  return html`<header style=${{marginBottom: "16px"}}><h1>AndroGuard</h1>
-      <div className="muted">Static security analysis of Android APK/AAB: M1 APK rules, M2 API rules, dependency CVEs, M4 exploitability and ML-assisted risk</div></header>
-    <${Upload} onDone=${id => { setSelected(id); refresh(); }} />
-    <${ScanList} scans=${scans} selected=${selected} onSelect=${setSelected} />
-    ${selected && html`<${ScanDetail} key=${selected} id=${selected} />`}`;
-}
-
-ReactDOM.createRoot(document.getElementById("root")).render(html`<${App} />`);
-</script>
+<script src="/static/app.js"></script>
 </body>
 </html>
