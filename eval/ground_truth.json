@@ -1,0 +1,234 @@
+{
+  "_method": "Unit = (app, category). Positive if the app's official vulnerability list documents it (mapped to AndroGuard categories below). Categories the scanner reports but the docs do not mention are labelled in 'reviewed' after manually checking the report evidence. Hardcoded API keys and secrets are one evaluation category. 'out_of_scope' also lists documented issues whose evidence is absent from the released APK (checked in the decompiled code), since no static tool can see them.",
+  "apps": {
+    "InsecureBankv2": {
+      "source": "https://github.com/dineshshetty/Android-InsecureBankv2 (README.markdown)",
+      "documented": {
+        "Exported Components": [
+          "Flawed Broadcast Receivers",
+          "Vulnerable Activity Components",
+          "Insecure Content Provider access"
+        ],
+        "Insecure Cryptography": [
+          "Local Encryption issues",
+          "Weak Cryptography implementation"
+        ],
+        "Insecure WebView": [
+          "Insecure Webview implementation"
+        ],
+        "Insecure Data Storage": [
+          "Insecure Logging mechanism",
+          "Android Backup vulnerability",
+          "Insecure SDCard storage"
+        ],
+        "HTTP Endpoints": [
+          "Insecure HTTP connections"
+        ],
+        "Cleartext Traffic": [
+          "Insecure HTTP connections"
+        ],
+        "Hardcoded Secrets": [
+          "Hardcoded secrets",
+          "Developer Backdoors"
+        ]
+      },
+      "out_of_scope": [
+        "Intent Sniffing and Injection",
+        "Weak Authorization mechanism",
+        "Root Detection and Bypass",
+        "Emulator Detection and Bypass",
+        "Application Patching",
+        "Sensitive Information in Memory",
+        "Android Pasteboard vulnerability",
+        "Application Debuggable",
+        "Android keyboard cache issues",
+        "Runtime Manipulation",
+        "Parameter Manipulation",
+        "Username Enumeration issue",
+        "Weak change password implementation"
+      ],
+      "reviewed": {
+        "Insecure Permissions": {
+          "label": true,
+          "note": "Manifest requests GET_ACCOUNTS, READ_CONTACTS, SEND_SMS, WRITE_EXTERNAL_STORAGE"
+        },
+        "Improper SSL/TLS Validation": {
+          "label": true,
+          "note": "targetSdkVersion 22 (< 24): user-installed CAs are trusted by default"
+        },
+        "Excessive API Permissions": {
+          "label": true,
+          "note": "READ_CONTACTS requested; 0 references to ContactsContract/com.android.contacts in decompiled code"
+        }
+      }
+    },
+    "AndroGoat": {
+      "source": "https://github.com/satishpatnayak/AndroGoat (README, v2.0.1)",
+      "documented": {
+        "Insecure Data Storage": [
+          "Shared Prefs 1",
+          "Shared Prefs 2",
+          "SQLite",
+          "Temp Files",
+          "SD Card",
+          "Insecure Logging",
+          "Android allowBackup"
+        ],
+        "Insecure WebView": [
+          "Input Validations - WebView"
+        ],
+        "Exported Components": [
+          "Unprotected Activity",
+          "Unprotected Service",
+          "Unprotected Broadcast Receivers",
+          "Unprotected Content Providers",
+          "Custom URL Scheme"
+        ],
+        "Hardcoded Secrets": [
+          "Hardcoding issues - Shopping Cart"
+        ],
+        "Hardcoded API keys/secrets": [
+          "Hardcoding issues - AI",
+          "Hardcoding issues - Cloud Service"
+        ],
+        "HTTP Endpoints": [
+          "Network intercepting - HTTP"
+        ],
+        "Cleartext Traffic": [
+          "Network intercepting - HTTP",
+          "Misconfigured Network_Security_Config.xml"
+        ],
+        "Improper SSL/TLS Validation": [
+          "Network intercepting - HTTPS (interception implies user CAs are trusted)"
+        ],
+        "Insecure Cryptography": [
+          "Broken Cryptography"
+        ]
+      },
+      "out_of_scope": [
+        "Root Detection",
+        "Emulator Detection",
+        "Keyboard Cache",
+        "Input Validations - XSS",
+        "Input Validations - SQLi",
+        "Input Validations - QR Code",
+        "Insecure Clipboard Usage",
+        "Certificate Pinning - OKHTTP3",
+        "Certificate Pinning - Network Security Config",
+        "Android Debuggable",
+        "Binary Patching",
+        "Biometric Authentication",
+        "Misconfigured Firebase DB (no Firebase URL or reference anywhere in the v2.0.1 APK)"
+      ],
+      "reviewed": {
+        "Insecure Permissions": {
+          "label": true,
+          "note": "Manifest requests CAMERA, READ/WRITE_EXTERNAL_STORAGE"
+        }
+      }
+    },
+    "InsecureShop": {
+      "source": "https://github.com/hax0rgb/InsecureShop (README, v1.0)",
+      "documented": {
+        "Hardcoded Secrets": [
+          "Hardcoded Credentials"
+        ],
+        "Insecure WebView": [
+          "Insufficient URL Validation",
+          "Weak Host Validation Check",
+          "Unprotected Data URIs",
+          "Intercepting Implicit intent to load arbitrary URL",
+          "Insecure Webview Properties Enabled"
+        ],
+        "Exported Components": [
+          "Access to Protected Components",
+          "Theft of Arbitrary files",
+          "Insecure Broadcast Receiver",
+          "Insecure Implementation of SetResult in exported Activity",
+          "Insecure Content Provider"
+        ],
+        "Vulnerable Dependency": [
+          "Using Components with Known Vulnerabilities"
+        ],
+        "Hardcoded API keys/secrets": [
+          "AWS Cognito Misconfiguration"
+        ],
+        "Improper SSL/TLS Validation": [
+          "Lack of SSL Certificate Validation"
+        ],
+        "Insecure Data Storage": [
+          "Insecure Data Storage",
+          "Insecure Logging"
+        ]
+      },
+      "out_of_scope": [
+        "Arbitrary Code Execution via third-party package contexts",
+        "Insecure use of FilePaths in FileProvider",
+        "Use of Implicit intent to send a broadcast with sensitive data"
+      ],
+      "reviewed": {
+        "Insecure Permissions": {
+          "label": true,
+          "note": "Custom permission com.insecureshop.permission.READ has protectionLevel normal (guards the insecure content provider)"
+        },
+        "Cleartext Traffic": {
+          "label": true,
+          "note": "android:usesCleartextTraffic=true"
+        },
+        "HTTP Endpoints": {
+          "label": false,
+          "note": "Only a protocol check and a stackoverflow link inside net.gotev.uploadservice (rule fixed)"
+        }
+      }
+    },
+    "OVAA": {
+      "source": "https://github.com/oversecured/ovaa (README, release 1.0.0)",
+      "documented": {
+        "Exported Components": [
+          "#1 login_url via deeplink",
+          "#5 redirect_intent in LoginActivity",
+          "#12 TheftOverwriteProvider path traversal"
+        ],
+        "Insecure WebView": [
+          "#3 host validation",
+          "#4 setAllowFileAccessFromFileURLs(true)"
+        ],
+        "Sensitive Data in URLs": [
+          "#8 encrypted user data in query parameter token"
+        ],
+        "Insecure Data Storage": [
+          "#13 credentials in logs",
+          "#18 DEX in a world-readable/writable directory"
+        ],
+        "Insecure Cryptography": [
+          "#14 hardcoded AES key"
+        ],
+        "Hardcoded Secrets": [
+          "#17 credentials in strings.xml test_url"
+        ],
+        "Insecure API Endpoints": [
+          "#17 dev environment endpoint"
+        ]
+      },
+      "out_of_scope": [
+        "#2 grantUriPermissions providers",
+        "#6 theft via ACTION_PICK",
+        "#7 insecure broadcast",
+        "#9 deserialization",
+        "#10-11 memory corruption",
+        "#15 arbitrary code execution",
+        "#16 wide FileProvider paths"
+      ],
+      "reviewed": {
+        "Insecure Permissions": {
+          "label": true,
+          "note": "Manifest requests READ/WRITE_EXTERNAL_STORAGE"
+        },
+        "HTTP Endpoints": {
+          "label": true,
+          "note": "Retrofit BASE_URL http://example.com./api/v1/ and login_url over http"
+        }
+      }
+    }
+  }
+}

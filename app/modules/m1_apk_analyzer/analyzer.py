@@ -18,8 +18,9 @@ KB = {
         "A PEM private key block is shipped inside the package.",
         "Anyone can extract the key from the APK and impersonate the app/server or decrypt protected data.",
         "Remove the key from the package; keep private keys server-side or generate them in the Android Keystore."),
-    "SECRET-CREDENTIAL": (HS, "Hardcoded password", "HIGH", 0.6, ["MASVS-STORAGE-1"], ["MASWE-0004"],
-        "A password-named variable or string resource holds a literal value (API secrets are covered by M2).",
+    "SECRET-CREDENTIAL": (HS, "Hardcoded password or credential", "HIGH", 0.6, ["MASVS-STORAGE-1"], ["MASWE-0004"],
+        "A password/promo-code variable, a comparison against a literal user or password (backdoor), a URL with "
+        "user:password@ or a string resource holds a literal credential (API secrets are covered by M2).",
         "Hardcoded credentials are recoverable by decompiling the APK and give attackers direct access.",
         "Remove hardcoded credentials; authenticate against a server and keep user secrets in the Android Keystore."),
     "STORAGE-BACKUP": (DS, "Application data backup enabled", "MEDIUM", 0.9, ["MASVS-STORAGE-2"], ["MASWE-0006"],
@@ -144,9 +145,13 @@ CODE_RULES = {k: re.compile(v) for k, v in {
     "SECRET-CREDENTIAL":  # skips validation/UI names such as PASSWORD_PATTERN or passwordHint
         # (?=\w+\s*=\s*") rejects the ~99% of words that are not assigned a string literal before the costlier checks
         r'(?i)\b(?=\w+\s*=\s*")(?!\w*(?:pattern|regex|format|hint|label|message|msg|error|title|text|field|view)\w*\s*=)'
-        r'\w*(?:password|passwd|pwd|passphrase)\w*\s*=\s*"'
+        r'\w*(?:password|passwd|pwd|passphrase|promo_?code|coupon)\w*\s*=\s*"'
         r'(?!(?-i:[a-z_.]*(?:pass|pwd|secret)[a-z_.]*)")(?![^"]*\s)[^"]{4,}"'  # skip key names like "pref_password"
-        r'|<string name="[^"]*(?:password|passwd|pwd)[^"]*">(?![^<]*(?:pass|pwd|secret))(?![^<]*\s)[^<]{4,}</string>',
+        r'|<string name="[^"]*(?:password|passwd|pwd)[^"]*">(?![^<]*(?:pass|pwd|secret))(?![^<]*\s)[^<]{4,}</string>'
+        # backdoor-style checks: username.equals("devadmin"), Kotlin Intrinsics.areEqual(password, "x")
+        r'|\b\w*(?:user_?name|login|password|passwd|pwd|promo_?code|coupon)\w*(?:\.\w+\(\))*\.equals\(\s*"[^"\s]{3,}"\s*\)'
+        r'|areEqual\(\s*[\w.$]*(?:user_?name|login|password|passwd|pwd|promo_?code|coupon)\w*\s*,\s*"[^"\s]{3,}"\s*\)'
+        r'|://[^/\s"\'<>@:]{1,64}:[^/\s"\'<>@]{3,64}@[\w-]+\.',  # credentials inside a URL: https://user:pass@host
     "STORAGE-WORLD-MODE":
         r"MODE_WORLD_(?:READABLE|WRITEABLE)"
         r"|\b(?:openFileOutput|getSharedPreferences|openOrCreateDatabase|getDir)\([^,;]+,\s*[123]\s*[,)]",
@@ -176,7 +181,7 @@ CODE_RULES = {k: re.compile(v) for k, v in {
 }.items()}
 JADX_LOCAL = re.compile(r"(?:str|bArr|obj)\d*")  # jadx-generated local names; too generic to resolve by name
 # Substring pre-check for rules whose regex has no literal prefix (they would otherwise probe every word of every file)
-HINTS = {"SECRET-CREDENTIAL": ("pass", "pwd")}
+HINTS = {"SECRET-CREDENTIAL": ("pass", "pwd", "user", "login", "promo", "coupon", "://")}
 
 # ponytail: prefix skip list for bundled libraries; swap for real library detection if FP/FN rates demand it
 LIBRARY_PREFIXES = ("android/", "androidx/", "kotlin/", "kotlinx/", "com/google/", "okhttp3/", "okio/", "retrofit2/",

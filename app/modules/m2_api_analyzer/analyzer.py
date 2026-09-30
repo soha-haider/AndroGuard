@@ -17,10 +17,10 @@ KB = {
         "Anyone can extract the key; if it is not restricted to this app and specific APIs it can be abused for "
         "quota theft, billing or data access.",
         "Restrict the key to the app's package/SHA-1 and the required APIs in Google Cloud Console."),
-    "API-KEY-AWS": (KEY, "AWS access key ID in app", "HIGH", 0.9, ["MASVS-STORAGE-1"], ["MASWE-0004"],
-        "An AWS access key ID (AKIA/ASIA...) is embedded in the package.",
-        "Together with its secret key it gives direct access to AWS resources under that IAM identity.",
-        "Remove long-term AWS keys; use Cognito or a backend that issues short-lived, least-privilege credentials."),
+    "API-KEY-AWS": (KEY, "AWS access key or Cognito identity pool in app", "HIGH", 0.9, ["MASVS-STORAGE-1"], ["MASWE-0004"],
+        "An AWS access key ID (AKIA/ASIA...) or a Cognito identity pool ID (region:uuid) is embedded in the package.",
+        "Access keys give direct AWS access; a pool that allows unauthenticated identities hands out AWS credentials.",
+        "Remove long-term keys; disable unauthenticated Cognito identities and scope pool roles to least privilege."),
     "API-KEY-GENERIC": (KEY, "Hardcoded API key", "MEDIUM", 0.6, ["MASVS-STORAGE-1"], ["MASWE-0004"],
         "An api_key/app_key-named field, string resource or manifest meta-data holds a literal key.",
         "Keys shipped in the APK are public and can be reused to call the API as this app.",
@@ -87,14 +87,16 @@ KB = {
 }
 
 SKIP_HOSTS = (r"(?!schemas\.android\.com|www\.w3\.org|xmlpull\.org|ns\.adobe\.com|java\.sun\.com|(?:www\.)?apache\.org"
-              r"|purl\.org|json-schema\.org|localhost|127\.0\.0\.1|10\.0\.2\.2)")  # XML namespaces, loopback, emulator
+              r"|purl\.org|json-schema\.org|localhost|127\.0\.0\.1|10\.0\.2\.2"  # XML namespaces, loopback, emulator
+              r"|stackoverflow\.com|developer\.android\.com|github\.com)")  # documentation links in messages
 SENSITIVE = r"(?:password|passwd|pwd|pass|token|access_token|auth_token|api_?key|apikey|secret|client_secret|pin|cvv)"
 # (?=\w+\s*=\s*") first: cheaply rejects words that are not assigned a string literal (see M1 SECRET-CREDENTIAL)
 UI_NAMES = r'(?=\w+\s*=\s*")(?!\w*(?:pattern|regex|format|hint|label|message|msg|error|title|text|field|view|url|type|name|header)\w*\s*=)'
 
 CODE_RULES = {k: re.compile(v) for k, v in {
     "API-KEY-GOOGLE": r"AIza[0-9A-Za-z_\-]{35}",
-    "API-KEY-AWS": r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b",
+    "API-KEY-AWS": r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"
+                   r"|\b(?:us|eu|ap|ca|sa|me|af|il|mx)-(?:gov-)?[a-z]+-\d:[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b",
     "API-KEY-GENERIC":
         rf'(?i)\b{UI_NAMES}\w*(?:api_?key|app_?key|consumer_?key)\w*\s*=\s*"(?!AIza)(?![^"]*(?:key|api))[\w\-]{{16,}}"'
         r'|<string name="[^"]*(?:api_?key|app_?key|consumer_?key)[^"]*">(?!AIza)[\w\-]{16,}</string>'
@@ -113,7 +115,8 @@ CODE_RULES = {k: re.compile(v) for k, v in {
         r"https?://[^/\"'<\s]*\b(?:dev|develop|staging|stage|test|testing|qa|uat|sandbox|debug|internal)\b[^/\"'<\s]*"
         r"|https?://[^\"'<\s]*/(?:debug|admin|internal)\b",
     "ENDPOINT-CLOUD": r"https?://[\w-]+\.(?:firebaseio\.com|firebasedatabase\.app)|\bs3[\w.-]*\.amazonaws\.com",
-    "HTTP-ENDPOINT": rf"http://{SKIP_HOSTS}[^\"'<\s]*",  # no quote required: Hermes bytecode stores strings unquoted
+    # no quote required (Hermes bytecode stores strings unquoted); protocol checks like startsWith("http://") are not endpoints
+    "HTTP-ENDPOINT": rf"(?<!startsWith\(\")(?<!equals\(\")(?<!contains\(\")(?<!indexOf\(\")http://(?!\s){SKIP_HOSTS}[^\"'<\s]*",
     "URL-SENSITIVE-PARAM":
         rf'(?i)[?&]{SENSITIVE}=|@Query\(\s*"{SENSITIVE}"|appendQueryParameter\(\s*"{SENSITIVE}"',
     "AUTH-HARDCODED-BASIC":

@@ -110,6 +110,15 @@ public class CryptoClass {
     }
 }"""
 
+CREDS = """package com.test.vuln;
+public class Creds {
+    private final String promoCode = "NEW2019";
+    boolean backdoor(String username) { return username.equals("devadmin"); }
+    boolean kotlin(String password) { return Intrinsics.areEqual(password, "Dinesh@123"); }
+    String dev = "https://adm1n:passw0rd@dev.victim.com";
+    boolean country(String countryCode) { return countryCode.equals("US"); }
+}"""
+
 STRINGS = """<resources>
     <string name="prompt_password">Password</string>
     <string name="db_password">s3cr3tP@ss</string>
@@ -135,6 +144,7 @@ def test_m1():
         _write(jadx, "sources/com/test/vuln/Vuln.java", VULN)
         _write(jadx, "sources/com/test/vuln/Safe.java", SAFE)
         _write(jadx, "sources/com/test/vuln/CryptoClass.java", TWO_HOP_KEY)
+        _write(jadx, "sources/com/test/vuln/Creds.java", CREDS)
         _write(jadx, "sources/androidx/crypto/Lib.java", 'Cipher.getInstance("DES");')
 
         findings = analyze(dec, jadx)
@@ -147,6 +157,8 @@ def test_m1():
                        for f in findings), "negative cases were flagged"
         assert [f.id.rsplit("-", 1)[0] for f in findings if f.affected_component == "com/test/vuln/CryptoClass.java"] \
             == ["CRYPTO-HARDCODED-KEY"], "two-hop hardcoded key not detected"
+        creds = next(f for f in findings if f.affected_component == "com/test/vuln/Creds.java")
+        assert [e.split(":")[0] for e in creds.evidence] == ["L3", "L4", "L5", "L6"], creds.evidence  # not L7 (countryCode)
         exported = {f.affected_component for f in findings if f.category == "Exported Components"}
         assert exported == {".Transfer", ".WeakService", ".Recv", ".Prov"}, exported
         assert by_component[".Prov"].severity == "HIGH"

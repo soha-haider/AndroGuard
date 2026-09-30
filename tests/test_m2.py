@@ -31,6 +31,7 @@ STRINGS = f"""<resources>
     <string name="firebase_database_url">https://demo-app.firebaseio.com</string>
     <string name="payment_key">{STRIPE}</string>
     <string name="privacy_url">http://example.com/privacy</string>
+    <string name="aws_Identity_pool_ID">us-east-1:7e9426f7-42af-4717-8689-00a9a4b65c1c</string>
 </resources>"""
 
 API = f"""package com.test.api;
@@ -70,6 +71,8 @@ public class Safe {
         SSLContext.getInstance("TLS");
         String narrow = "https://www.googleapis.com/auth/drive.file";
         String codeFlow = "https://accounts.example.com/authorize?response_type=code";
+        if (!url.startsWith("http://")) throw new IllegalArgumentException("Read http://stackoverflow.com/a/4410331");
+        throw new IllegalArgumentException("Specify either http:// or https:// as protocol");
     }
 }"""
 
@@ -102,6 +105,8 @@ def test_m2():
         assert not flagged & {"com/test/api/Safe.java", "okhttp3/ConnectionSpec.java"}, "negative cases were flagged"
         unused = {f.affected_component for f in findings if f.id.startswith("PERM-UNUSED")}
         assert unused == {"android.permission.READ_CONTACTS"}, unused
+        aws = [f for f in findings if f.id.startswith("API-KEY-AWS") and f.affected_component == "res/values/strings.xml"]
+        assert aws and "us-east-1:" in aws[0].evidence[0], "Cognito identity pool ID missed"
         bundle = [f for f in findings if f.affected_component == "assets/index.android.bundle"]
         assert [f.id.rsplit("-", 1)[0] for f in bundle] == ["HTTP-ENDPOINT"], "Hermes bundle URL missed"
         assert "http://api.demo-shop.com/v1/users" in bundle[0].evidence[0] and len(bundle[0].evidence[0]) < 230
