@@ -6,8 +6,8 @@
 
 | | |
 |---|---|
-| Done | **about 98%** of the proposal (98.2% weighted by effort) |
-| Remaining | OpenAI summaries (optional in the proposal), deployment on a real Ubuntu server, the Ghera and OWApp datasets. The thesis and the presentation are not counted. |
+| Done | **about 99%** of the proposal (98.8% weighted by effort) |
+| Remaining | Deployment on a real Ubuntu server and the Ghera and OWApp datasets. OpenAI summaries were optional and are left out for privacy. The thesis and the presentation are not counted. |
 | Run it anywhere | `docker run -d -p 8000:8000 -v androguard-db:/srv/db --name androguard minhal128/androguard` ([Docker Hub](https://hub.docker.com/r/minhal128/androguard)) |
 | Proof | Every item under "What is done" was run on 30 September or 1 October 2026. The outputs and screenshots below come from those runs. |
 
@@ -38,10 +38,12 @@ Weights are the effort share of each phase (the same weights as the earlier mile
 | 5 | Core static-analysis engine | 15 | 100% | 45 rules over 16 categories, FlowDroid data flows, CLI scanner | |
 | 6 | Input processing and dependency matching | 10 | 100% | Validation, SHA-256, isolated workspace, AAB (tested on a real bundle), OSV + NVD, timeout and cancel | |
 | 7 | Correlation and standardization | 8 | 100% | Standard finding schema, attack chains, data-flow correlation | |
-| 8 | Risk, exploitability and explainable AI | 12 | 95% | Exploitability with reasons, risk score, ML-assisted risk, SHAP, LIME, CodeBERT attention maps | OpenAI summaries (optional; left out for privacy) |
+| 8 | Risk, exploitability and explainable AI | 12 | 100% | Exploitability with reasons, risk score, ML-assisted risk, SHAP, LIME, CodeBERT attention maps | |
 | 9 | Remediation knowledge base and web app | 15 | 100% | Web app, HTML/PDF reports, accounts, CRM, confidence, explainable-AI and data-flow panels | |
 | 10 | Testing, evaluation and deployment | 10 | 95% | Tests; development, held-out and benign benchmarks; rule-only baseline; time and memory; DroidBench; Docker image on Docker Hub | Deployment on a real Ubuntu server |
-| | **Total** | **100** | **98.2%** | | |
+| | **Total** | **100** | **98.8%** | | |
+
+Phase 8 counts as complete: the proposal makes OpenAI summaries optional ("may be used, where appropriate"), and they were left out because evidence lines can hold the scanned app's real secrets.
 
 ## What is done, and proof that it works
 
@@ -259,11 +261,11 @@ Proof:
 - The decompiled workspace is a temporary directory that is removed after every scan.
 - Only the findings, the scores and the file's SHA-256 are stored.
 
-## What remains (about 2%)
+## What remains (about 1%)
 
 | Remaining work | Phase | Note |
 |---|---|---|
-| OpenAI summaries | 8 | Optional in the proposal. Left out on purpose: evidence lines can hold the scanned app's real secrets, and sending them to a third-party API would break privacy by design. |
+| OpenAI summaries | 8 | Optional in the proposal, so not counted as missing. Left out on purpose: evidence lines can hold the scanned app's real secrets, and sending them to a third-party API would break privacy by design. |
 | Deployment on a real Ubuntu server | 10 | The image runs on any Linux host with Docker. It was tested with Docker Desktop, not on a server. |
 | Ghera and OWApp | 3 | Not used. The held-out set uses five other intentionally vulnerable apps. |
 | Redis | 2 | Left out on purpose. One scan worker is enough because jadx needs gigabytes of RAM; the code names the upgrade path (Redis with RQ or Celery) for scans that must survive restarts or run on several machines. |

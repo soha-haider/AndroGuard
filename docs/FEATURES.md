@@ -319,7 +319,7 @@ One caution remains: the evidence lines in a report can contain the scanned app'
 
 **These six features: yes, 100%.** Each is implemented, has a runnable check, and shows in the web and PDF reports.
 
-**The whole proposal: about 98%.** What is left:
+**The whole proposal: about 99% (98.8% by phase weights).** What is left:
 
 | Item | Status | Reason |
 |---|---|---|
