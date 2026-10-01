@@ -35,6 +35,11 @@ def render_html(report: dict) -> str:
         + f"<p><b>OWASP:</b> {e(', '.join(f.get('masvs', []) + f.get('maswe', [])))}</p>"
         f"<p><b>Remediation:</b> {e(f.get('remediation'))}</p></div>" for f in findings)
     expl = risk.get("exploitability", {})
+    flows = "".join(f"<tr><td><code>{e(f['source'])}</code> line {e(f['source_line'])}</td><td><code>{e(f['sink'])}</code> "
+                    f"line {e(f['sink_line'])}</td><td><code>{e(f['method'])}</code></td></tr>" for f in report.get("data_flows", [])[:50])
+    flow_section = (f"<h2>Data flows (FlowDroid)</h2><p class='muted'>{e(report['data_flow_status'])}</p>"
+                    + (f"<table><tr><th>Source</th><th>Sink</th><th>Sink is in</th></tr>{flows}</table>" if flows else "")
+                    if report.get("data_flow_status") else "")
     return (f"<!doctype html><html><head><meta charset='utf-8'><title>AndroGuard report - {e(report['file'])}</title>"
             f"<style>{CSS}</style></head><body><h1>AndroGuard security report</h1>"
             f"<div class='muted'>{e(report['file'])} ({e(report.get('type', '').upper())}) · SHA-256 {e(report.get('sha256'))}</div>"
@@ -42,7 +47,7 @@ def render_html(report: dict) -> str:
             f"<div>{len(findings)} findings · exploitability HIGH {e(expl.get('HIGH', 0))}, MEDIUM {e(expl.get('MEDIUM', 0))}, "
             f"LOW {e(expl.get('LOW', 0))} · {len(risk.get('in_attack_chains', []))} in attack chains</div>"
             f"<h2>Top risks</h2><table><tr><th>Risk</th><th>Severity</th><th>Exploitability</th><th>Finding</th>"
-            f"<th>Affected</th></tr>{top}</table><h2>All findings</h2>{cards}</body></html>")
+            f"<th>Affected</th></tr>{top}</table><h2>All findings</h2>{cards}{flow_section}</body></html>")
 
 
 def render_pdf(page: str) -> bytes:

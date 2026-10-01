@@ -3,6 +3,7 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
+from app.modules.m3_input_processor import dataflow
 from app.modules.m4_risk_engine.correlator import app_risk, assess
 from app.schemas.finding import StandardFinding
 
@@ -35,7 +36,28 @@ def test_m4():
     risk = app_risk(findings)
     assert risk["level"] == "HIGH" and risk["score"] == findings[0].risk_score
     assert set(risk["in_attack_chains"]) == {"HTTP-ENDPOINT-1", "API-KEY-GOOGLE-1", "CRYPTO-HARDCODED-KEY-1"}
-    print(f"[OK] M4 check passed: top risk {findings[0].id} ({findings[0].risk_score}), app risk {risk['level']}")
+
+    # FlowDroid: XML -> flows -> findings; a traced flow backs rule hits in the same class
+    xml = ('<DataFlowResults><Results><Result><Sink Statement="s" LineNumber="9" Method="&lt;a.b.Login: void ok()&gt;" '
+           'MethodSourceSinkDefinition="&lt;android.app.Activity: void setResult(int,android.content.Intent)&gt;"/><Sources>'
+           '<Source Statement="t" LineNumber="8" Method="m" MethodSourceSinkDefinition="&lt;a.b.Login: android.view.View '
+           'findViewById(int)&gt;"/></Sources></Result>'
+           '<Result><Sink Statement="s" LineNumber="35" Method="&lt;a.b.Login$1: void onClick(x)&gt;" '
+           'MethodSourceSinkDefinition="&lt;android.util.Log: int i(java.lang.String,java.lang.String)&gt;"/><Sources>'
+           '<Source Statement="t" LineNumber="27" Method="m" MethodSourceSinkDefinition="&lt;android.telephony.TelephonyManager: '
+           'java.lang.String getDeviceId()&gt;"/></Sources></Result></Results></DataFlowResults>')
+    flows = dataflow.parse(xml)
+    assert flows[0] == {"source": "android.telephony.TelephonyManager.getDeviceId", "source_line": 27, "sink": "android.util.Log.i",
+                        "sink_line": 35, "method": "a.b.Login$1.onClick"}, flows  # security sinks sort first
+    assert len(flows) == 2 and flows[1]["sink"] == "android.app.Activity.setResult"
+    ui_source = "$r6 = virtualinvoke $r5.<android.widget.EditText: android.text.Editable getText()>()"
+    assert dataflow._api(ui_source) == "android.widget.EditText.getText"  # UI sources come without a definition
+    log_rule = StandardFinding(id="STORAGE-LOG-SECRET-1", title="t", severity="MEDIUM", description="d",
+                               category="Insecure Data Storage", confidence=0.5, affected_component="a/b/Login.java")
+    by_id = {f.id: f for f in assess([log_rule] + dataflow.findings(flows))}
+    assert by_id["DATAFLOW-LOG-1"].affected_component == "a/b/Login.java" and by_id["DATAFLOW-LOG-1"].exploitability == "LOW"
+    assert by_id["STORAGE-LOG-SECRET-1"].related == ["DATAFLOW-LOG-1"] and by_id["STORAGE-LOG-SECRET-1"].confidence == 0.8
+    print(f"[OK] M4 check passed: top risk {findings[0].id} ({findings[0].risk_score}), app risk {risk['level']}, data flows linked")
 
 
 if __name__ == "__main__":

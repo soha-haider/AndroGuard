@@ -13,6 +13,8 @@ class StandardFinding(BaseModel):
     exploitability: Optional[str] = Field(None, description="Exploitability estimation: HIGH, MEDIUM, LOW")
     exploit_factors: list[str] = Field(default_factory=list, description="Why the exploitability was rated this way")
     risk_score: Optional[float] = Field(None, ge=0, le=100, description="Priority 0-100 from severity x confidence x exploitability")
+    codebert_score: Optional[float] = Field(None, ge=0.0, le=1.0, description="CodeBERT probability that the evidence is vulnerable")
+    codebert_tokens: list[str] = Field(default_factory=list, description="Code tokens CodeBERT's attention was highest on")
     related: list[str] = Field(default_factory=list, description="IDs of findings that combine with this one into an attack chain")
     ml_score: Optional[float] = Field(None, description="ML probability (0-1) that the evidence line is vulnerable code")
     ml_top: list[tuple[str, float]] = Field(default_factory=list, description="Top SHAP feature contributions behind ml_score")

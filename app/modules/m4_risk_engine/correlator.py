@@ -19,6 +19,8 @@ BASE = [
     ("CLEARTEXT-", "MEDIUM", "Needs a network position to read or modify cleartext traffic"),
     ("HTTP-ENDPOINT", "MEDIUM", "Needs a network position to read or modify cleartext traffic"),
     ("URL-SENSITIVE-PARAM", "MEDIUM", "Leaks through server, proxy and analytics logs"),
+    ("DATAFLOW-URL", "MEDIUM", "Leaks through server, proxy and analytics logs; FlowDroid traced the data flow"),
+    ("DATAFLOW-", "LOW", "Needs adb, root or backup access to the device; FlowDroid traced the data flow"),
     ("AUTH-", "MEDIUM", "Needs a malicious app on the device to intercept the OAuth redirect"),
     ("WEBVIEW-JS-BRIDGE", "MEDIUM", "Exploitable once the WebView renders attacker-controlled content"),
     ("WEBVIEW-FILE-URL-ACCESS", "MEDIUM", "Exploitable once the WebView loads an attacker-controlled file"),
@@ -33,7 +35,7 @@ BASE = [
 
 # Attack chains: when every group has at least one finding, the targets become HIGH and point to the evidence.
 CHAINS = [
-    (("HTTP-ENDPOINT", "URL-SENSITIVE-PARAM"), [("CLEARTEXT-TRAFFIC",)],
+    (("HTTP-ENDPOINT", "URL-SENSITIVE-PARAM", "DATAFLOW-URL"), [("CLEARTEXT-TRAFFIC",)],
      "The network config allows cleartext and the app uses http:// endpoints, so the traffic can be intercepted"),
     (("TLS-TRUST-ALL", "TLS-HOSTNAME-ALL", "TLS-WEBVIEW-SSL-ERROR"),
      [("HTTP-ENDPOINT", "ENDPOINT-", "API-KEY", "API-SECRET", "URL-SENSITIVE-PARAM", "AUTH-")],
@@ -48,7 +50,7 @@ CHAINS = [
     (("CRYPTO-HARDCODED-KEY", "CRYPTO-STATIC-IV"),
      [("STORAGE-PREFS-SECRET", "STORAGE-SQL-SECRET", "STORAGE-EXTERNAL", "STORAGE-WORLD-MODE", "STORAGE-BACKUP")],
      "The key and the stored data are both on the device, so the encryption can be reversed"),
-    (("STORAGE-PREFS-SECRET", "STORAGE-SQL-SECRET", "STORAGE-LOG-SECRET"), [("STORAGE-BACKUP", "STORAGE-WORLD-MODE")],
+    (("STORAGE-PREFS-SECRET", "STORAGE-SQL-SECRET", "STORAGE-LOG-SECRET", "DATAFLOW-STORAGE"), [("STORAGE-BACKUP", "STORAGE-WORLD-MODE")],
      "Stored secrets can be pulled through an app backup or a world-readable file"),
 ]
 
@@ -70,6 +72,12 @@ def assess(findings: list[StandardFinding]) -> list[StandardFinding]:
                     f.exploitability = "HIGH"
                     f.exploit_factors.append(why)
                     f.related += [i for ids in evidence for i in ids if i != f.id and i not in f.related]
+    for flow in (f for f in findings if f.id.startswith("DATAFLOW-")):  # a traced flow backs the rule hits in its class
+        for f in findings:
+            if not f.id.startswith("DATAFLOW-") and f.affected_component == flow.affected_component and f.category == flow.category:
+                f.confidence = max(f.confidence or 0, 0.8)
+                f.exploit_factors.append("FlowDroid traced sensitive data into this class")
+                f.related += [flow.id] if flow.id not in f.related else []
     for f in findings:
         f.risk_score = round(100 * SEVERITY_WEIGHT.get(f.severity, 0.45) * EXPLOIT_WEIGHT[f.exploitability]
                              * (f.confidence if f.confidence is not None else 0.6), 1)

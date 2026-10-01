@@ -369,7 +369,8 @@ const Phone = ({at, file}) => html`<div className="phone" aria-hidden="true"><di
   <div className="pm-body" key=${at}>${PHONE[at]()}</div>
 </div></div>`;
 function ScanPage({id}) {
-  const [scan, err] = useLoad(`/api/scans/${id}`, active);
+  const [scan, err, load] = useLoad(`/api/scans/${id}`, active);
+  const cancel = () => api(`/api/scans/${id}/cancel`, {method: "POST"}).catch(() => {}).then(load);
   if (err) return html`<main className="page wrap"><div className="empty"><${Icon} n="warning-circle" /><h2>${err}</h2><a className="btn" href="#/scans">Back to my scans</a></div></main>`;
   if (!scan) return html`<main className="page wrap"><${Skeleton} rows=${4} /></main>`;
   if (active(scan)) {
@@ -377,9 +378,12 @@ function ScanPage({id}) {
     return html`<main className="page wrap scan-live"><div className="panel" aria-live="polite">
       <h1 style=${{fontSize: "24px"}}>Scanning ${scan.filename}</h1><p className="muted" style=${{marginTop: "6px"}}>This usually takes one to four minutes. You can leave this page open.</p>
       <ol className="steps-progress">${STAGES.map(([label], i) => html`<li key=${label} className=${i < at ? "done" : i === at ? "now" : ""}>
-        <${Icon} n=${i < at ? "check-circle" : i === at ? "circle-notch" : "circle"} />${label}</li>`)}</ol></div>
+        <${Icon} n=${i < at ? "check-circle" : i === at ? "circle-notch" : "circle"} />${label}</li>`)}</ol>
+      <button className="btn ghost sm" style=${{marginTop: "20px"}} onClick=${cancel}>Cancel scan</button></div>
       <${Phone} at=${at} file=${scan.filename} /></main>`;
   }
+  if (scan.status === "cancelled") return html`<main className="page wrap"><div className="empty"><${Icon} n="x-circle" />
+    <h2>This scan was cancelled</h2><p className="muted">Cancelled and failed scans do not use up your scans.</p><a className="btn primary" href="#/">Scan an app</a></div></main>`;
   if (scan.status === "failed") return html`<main className="page wrap"><div className="empty"><${Icon} n="warning-circle" />
     <h2>This scan could not finish</h2><p className="muted">${(scan.error || "").slice(-240)}</p><a className="btn primary" href="#/">Try another file</a></div></main>`;
   return html`<${Report} scan=${scan} />`;
@@ -407,6 +411,12 @@ function Report({scan}) {
         ${v === "ALL" ? `All ${findings.length}` : `${title(v)} ${counts[v] || 0}`}</button>`)}</div>
       ${shown.length ? shown.map(f => html`<${Finding} key=${f.id} f=${f} />`) : html`<p className="muted">Nothing at this severity.</p>`}
     </div>
+    ${r.data_flow_status && html`<div className="panel">
+      <h2>Data flows (FlowDroid)</h2><p className="muted">${r.data_flow_status}</p>
+      ${(r.data_flows || []).length > 0 && html`<ul className="flows mono">${r.data_flows.slice(0, 30).map((f, i) => html`<li key=${i}>
+        <span>${f.source} <span className="muted">line ${f.source_line}</span></span><${Icon} n="arrow-right" />
+        <span>${f.sink} <span className="muted">line ${f.sink_line}</span></span><span className="muted">in ${f.method}</span></li>`)}</ul>`}
+    </div>`}
   </main>`;
 }
 
@@ -424,6 +434,10 @@ function Finding({f}) {
       <div><h4>Why this exploitability</h4><ul>${(f.exploit_factors || []).map((x, i) => html`<li key=${i}>${x}</li>`)}</ul></div>
       ${f.related && f.related.length > 0 && html`<div><h4>Linked findings</h4><p className="mono small">${f.related.join(", ")}</p></div>`}
       <div><h4>OWASP</h4><p>${[...(f.masvs || []), ...(f.maswe || [])].join(", ")}</p></div>
+      ${f.confidence != null && html`<div><h4>Detection confidence</h4><p>${Math.round(f.confidence * 100)}%</p></div>`}
+      ${(f.codebert_tokens || []).length > 0 && html`<div><h4>CodeBERT attention</h4>
+        <p>${Math.round(f.codebert_score * 100)}% likely vulnerable. Tokens the model attended to most:</p>
+        <p className="tokens">${f.codebert_tokens.map(t => html`<code key=${t}>${t}</code>`)}</p></div>`}
       <div><h4>How to fix</h4><p>${f.remediation}</p></div>
     </div>`}
   </div>`;
@@ -532,7 +546,7 @@ function AllScans() {
     <div className="toolbar">
       <input className="input" type="search" placeholder="Search by file or email" aria-label="Search scans" value=${q} onChange=${e => setQ(e.target.value)} />
       <select className="input" aria-label="Filter by status" value=${status} onChange=${e => setStatus(e.target.value)}>
-        <option value="">All statuses</option><option value="done">Done</option><option value="running">Running</option><option value="queued">Queued</option><option value="failed">Failed</option></select>
+        <option value="">All statuses</option><option value="done">Done</option><option value="running">Running</option><option value="queued">Queued</option><option value="failed">Failed</option><option value="cancelled">Cancelled</option></select>
     </div>
     ${err && html`<p className="form-error" role="alert">${err}</p>`}
     ${!rows ? html`<${Skeleton} />` : rows.length === 0 ? html`<div className="empty"><${Icon} n="files" /><h2>No scans match</h2><p className="muted">Try another search or status.</p></div>`

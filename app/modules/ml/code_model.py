@@ -56,12 +56,9 @@ def vectorize(lines, vocab):
     return csr_matrix(([1.0] * len(rows), (rows, cols)), shape=(len(lines), len(SIGNALS) + len(vocab)))
 
 
-def train(csv_path: str):
-    import numpy as np
+def split(csv_path: str):
+    """(fit_df, test_df): the same split for every model, so their test metrics compare."""
     import pandas as pd
-    import xgboost as xgb
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
     from sklearn.model_selection import train_test_split
 
     df = pd.read_csv(csv_path, usecols=["Code", "Vulnerability_status"]).dropna()
@@ -71,7 +68,16 @@ def train(csv_path: str):
     # ponytail: negatives downsampled to 8:1 for training speed; the test set keeps the real ~1.8% prevalence
     pos = train_df[train_df["Vulnerability_status"] == 1]
     neg = train_df[train_df["Vulnerability_status"] == 0].sample(n=8 * len(pos), random_state=42)
-    fit_df = pd.concat([pos, neg])
+    return pd.concat([pos, neg]), test_df
+
+
+def train(csv_path: str):
+    import numpy as np
+    import xgboost as xgb
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
+
+    fit_df, test_df = split(csv_path)
     vocab = [t for t, _ in Counter(t for line in fit_df["Code"] for t in set(TOKEN.findall(line))).most_common(300)]
     X_fit, y_fit = vectorize(fit_df["Code"], vocab), fit_df["Vulnerability_status"].to_numpy()
     X_test, y_test = vectorize(test_df["Code"], vocab), test_df["Vulnerability_status"].to_numpy()
