@@ -1,0 +1,12 @@
+.git
+.claude
+data
+!data/models/codebert-lvdandro
+tools
+docs
+eval
+tests
+**/__pycache__
+*.apk
+*.aab
+context.md
