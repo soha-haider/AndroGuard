@@ -435,9 +435,15 @@ function Finding({f}) {
       ${f.related && f.related.length > 0 && html`<div><h4>Linked findings</h4><p className="mono small">${f.related.join(", ")}</p></div>`}
       <div><h4>OWASP</h4><p>${[...(f.masvs || []), ...(f.maswe || [])].join(", ")}</p></div>
       ${f.confidence != null && html`<div><h4>Detection confidence</h4><p>${Math.round(f.confidence * 100)}%</p></div>`}
-      ${(f.codebert_tokens || []).length > 0 && html`<div><h4>CodeBERT attention</h4>
-        <p>${Math.round(f.codebert_score * 100)}% likely vulnerable. Tokens the model attended to most:</p>
-        <p className="tokens">${f.codebert_tokens.map(t => html`<code key=${t}>${t}</code>`)}</p></div>`}
+      ${(f.ml_score != null || f.codebert_score != null) && html`<div><h4>Explainable AI</h4>
+        ${f.ml_score != null && html`<p>XGBoost: ${Math.round(f.ml_score * 100)}% likely vulnerable.</p>
+          <p className="tokens"><span className="muted">SHAP</span>${(f.ml_top || []).map(([n, v]) => html`<code key=${n}>${n} +${v}</code>`)}</p>
+          ${(f.ml_lime || []).length > 0 && html`<p className="tokens"><span className="muted">LIME</span>${f.ml_lime.map(([n, v]) => html`<code key=${n}>${n} ${v > 0 ? "+" : ""}${v}</code>`)}</p>`}`}
+        ${f.codebert_score != null && html`<p style=${{marginTop: "10px"}}>CodeBERT: ${Math.round(f.codebert_score * 100)}% likely vulnerable. Its attention on the evidence line:</p>
+          ${(f.codebert_attention || []).length > 0
+            ? html`<p className="attn mono">${f.codebert_attention.map(([t, w], i) => html`<span key=${i} title=${`attention ${w}`} style=${{background: `color-mix(in srgb, var(--accent) ${Math.round(w * 45)}%, transparent)`}}>${t}</span>`)}</p>`
+            : html`<p className="tokens">${(f.codebert_tokens || []).map(t => html`<code key=${t}>${t}</code>`)}</p>`}`}
+      </div>`}
       <div><h4>How to fix</h4><p>${f.remediation}</p></div>
     </div>`}
   </div>`;

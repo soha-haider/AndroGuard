@@ -125,20 +125,53 @@ def explain(lines: list[str], top: int = 3) -> list[tuple[float, list[tuple[str,
     return out
 
 
+WORD = re.compile(r"[A-Za-z_]\w*")
+
+
+def lime(line: str, samples: int = 500, top: int = 3) -> list[tuple[str, float]]:
+    """LIME (Ribeiro et al. 2016) for one line: copies with random words removed are re-scored by the model, and a
+    linear model weighted by closeness to the original gives each word's push on the probability (+0.3 = 30 points)."""
+    import numpy as np
+    import xgboost as xgb
+    from sklearn.linear_model import Ridge
+    words = sorted(set(WORD.findall(line)))
+    if not words:
+        return []
+    index = {w: i for i, w in enumerate(words)}
+    rng = np.random.default_rng(0)  # fixed seed: the same line always gets the same explanation
+    keep = np.ones((samples, len(words)), dtype=bool)
+    for row in keep[1:]:  # row 0 stays the original line
+        row[rng.choice(len(words), rng.integers(1, len(words) + 1), replace=False)] = False
+    texts = [WORD.sub(lambda m: m.group(0) if row[index[m.group(0)]] else "", line) for row in keep]
+    booster, meta = _load()
+    probs = booster.predict(xgb.DMatrix(vectorize(texts, meta["vocab"])))
+    distance = 1 - np.sqrt(keep.sum(1) / len(words))  # cosine distance to the original line
+    kernel = np.sqrt(np.exp(-((distance * 100) ** 2) / 25 ** 2))  # LIME's text kernel, width 25
+    # ponytail: one ridge fit over all words; LIME's feature selection only matters for long documents
+    coef = Ridge(alpha=1.0).fit(keep, probs, sample_weight=kernel).coef_
+    best = sorted(zip(words, coef), key=lambda x: -abs(x[1]))[:top]
+    return [(w, round(float(c), 2)) for w, c in best]
+
+
 def score_findings(findings):
     """Scores each finding's code evidence and nudges its risk by at most +/-20% (x0.8 .. x1.2)."""
     if not MODEL.exists():
         return findings  # ponytail: no trained model shipped -> rules-only risk
     targets = [(f, re.sub(r"^L\d+: ", "", e)) for f in findings for e in f.evidence[:3] if re.match(r"L\d+: ", e)]
+    scored, explained = {}, {}  # finding -> its highest-scoring line; line -> LIME (findings often share a line)
     if targets:
-        for (f, _), (p, top) in zip(targets, explain([line for _, line in targets])):
+        for (f, line), (p, top) in zip(targets, explain([line for _, line in targets])):
             if f.ml_score is None or p > f.ml_score:
-                f.ml_score, f.ml_top = round(p, 3), top
+                f.ml_score, f.ml_top, scored[id(f)] = round(p, 3), top, line
     for f in findings:
         if f.ml_score is not None:
+            line = scored[id(f)]
+            f.ml_lime = explained[line] = explained.get(line) or lime(line)
             f.risk_score = round(min(100.0, f.risk_score * (0.8 + 0.4 * f.ml_score)), 1)
             signals = ", ".join(f"{n} +{v}" for n, v in f.ml_top) or "none"
-            f.exploit_factors.append(f"ML model rates the evidence {f.ml_score:.0%} likely vulnerable (SHAP: {signals})")
+            words = ", ".join(f"{w} {v:+}" for w, v in f.ml_lime) or "none"
+            f.exploit_factors.append(f"ML model rates the evidence {f.ml_score:.0%} likely vulnerable "
+                                     f"(SHAP: {signals}; LIME: {words})")
     return sorted(findings, key=lambda f: -f.risk_score)
 
 

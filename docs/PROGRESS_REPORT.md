@@ -12,7 +12,8 @@
 | Proof | Every item under "What is done" was run on 30 September or 1 October 2026. The outputs and screenshots below come from those runs. |
 
 New since the 78% report of 30 September:
-- CodeBERT
+- CodeBERT, with attention maps
+- LIME next to SHAP
 - FlowDroid data flows
 - NVD enrichment
 - Scan timeout and cancel
@@ -37,8 +38,8 @@ Weights are the effort share of each phase (the same weights as the earlier mile
 | 5 | Core static-analysis engine | 15 | 100% | 45 rules over 16 categories, FlowDroid data flows, CLI scanner | |
 | 6 | Input processing and dependency matching | 10 | 100% | Validation, SHA-256, isolated workspace, AAB (tested on a real bundle), OSV + NVD, timeout and cancel | |
 | 7 | Correlation and standardization | 8 | 100% | Standard finding schema, attack chains, data-flow correlation | |
-| 8 | Risk, exploitability and explainable AI | 12 | 95% | Exploitability with reasons, risk score, ML-assisted risk, SHAP, CodeBERT attention | OpenAI summaries (optional) |
-| 9 | Remediation knowledge base and web app | 15 | 100% | Web app, HTML/PDF reports, accounts, CRM, confidence, CodeBERT and data-flow panels | |
+| 8 | Risk, exploitability and explainable AI | 12 | 95% | Exploitability with reasons, risk score, ML-assisted risk, SHAP, LIME, CodeBERT attention maps | OpenAI summaries (optional; left out for privacy) |
+| 9 | Remediation knowledge base and web app | 15 | 100% | Web app, HTML/PDF reports, accounts, CRM, confidence, explainable-AI and data-flow panels | |
 | 10 | Testing, evaluation and deployment | 10 | 95% | Tests; development, held-out and benign benchmarks; rule-only baseline; time and memory; DroidBench; Docker image on Docker Hub | Deployment on a real Ubuntu server |
 | | **Total** | **100** | **98.2%** | | |
 
@@ -119,9 +120,10 @@ All three models are scored on the same LVDAndro test lines: 124,084 lines, of w
 - CodeBERT is `microsoft/codebert-base` fine-tuned on 14,400 lines (1,600 vulnerable, the same 1:8 ratio as XGBoost) for one epoch at 64 tokens. That took 44 minutes on a laptop CPU.
 - CodeBERT separates vulnerable from safe lines best (ROC-AUC 0.990). XGBoost wins on F1 and PR-AUC, which matter most when fewer than 2% of lines are vulnerable, and it trained on 5 times more lines.
 - So XGBoost keeps adjusting the risk, by at most ±20%. It never creates a finding by itself; the rules stay the basis. SHAP shows the signals behind its score.
-- CodeBERT explains: each finding with a code line shows CodeBERT's probability and the identifiers its last attention layer focused on.
+- Every finding with a code line gets three explanations: SHAP and LIME for the XGBoost score, and CodeBERT's attention map, a heatmap over the line from its last attention layer.
+- Full details: `docs/FEATURES.md`.
 
-![A finding with SHAP, CodeBERT attention and detection confidence](screenshots/16-finding-codebert.jpg)
+![A finding with SHAP, LIME and the CodeBERT attention map](screenshots/16-finding-codebert.jpg)
 
 Source: `app/modules/ml/meta.json` and `app/modules/ml/codebert_meta.json`.
 
@@ -261,7 +263,7 @@ Proof:
 
 | Remaining work | Phase | Note |
 |---|---|---|
-| OpenAI summaries | 8 | Optional in the proposal. Not done. |
+| OpenAI summaries | 8 | Optional in the proposal. Left out on purpose: evidence lines can hold the scanned app's real secrets, and sending them to a third-party API would break privacy by design. |
 | Deployment on a real Ubuntu server | 10 | The image runs on any Linux host with Docker. It was tested with Docker Desktop, not on a server. |
 | Ghera and OWApp | 3 | Not used. The held-out set uses five other intentionally vulnerable apps. |
 | Redis | 2 | Left out on purpose. One scan worker is enough because jadx needs gigabytes of RAM; the code names the upgrade path (Redis with RQ or Celery) for scans that must survive restarts or run on several machines. |
@@ -300,7 +302,8 @@ Team commits before this work: project setup and the first M3 pipeline by Waleed
 | 1 Oct | `a24994d` | Scan timeout and cancel, plain memory and disk errors, NVD CVSS and CWE, bundletool jar discovery, a real `.aab` test. |
 | 1 Oct | `354c797` | FlowDroid data flows (DroidBench F1 0.826) linked into M4; fine-tuned CodeBERT compared with XGBoost and RF; detection confidence, CodeBERT attention and data flows in the web and PDF reports. |
 | 1 Oct | `18ef81b` | Docker image with every tool and both models, PostgreSQL compose, published as `minhal128/androguard` on Docker Hub. |
-| 1 Oct | this commit | Held-out, benign and DroidBench evaluations, the rule-only baseline, scan time and memory, and this report. |
+| 1 Oct | `a202346` | Held-out, benign and DroidBench evaluations, the rule-only baseline, scan time and memory, and this report. |
+| 1 Oct | this commit | LIME next to SHAP, CodeBERT attention maps as heatmaps in the web and PDF reports, and the feature documentation (`docs/FEATURES.md`). |
 
 Bugs found on real apps and fixed:
 - **Scanner failures (Windows and memory):**
@@ -349,6 +352,7 @@ python tests/test_m1.py
 python tests/test_m2.py
 python tests/test_m3_fixes.py
 python tests/test_m4.py
+python tests/test_ml.py
 python tests/test_api.py
 ```
 

@@ -3,8 +3,8 @@ An Explainable Static Security Analysis and Risk Assessment Platform for Android
 
 Pipeline: **M3** validate, SHA-256, decompile (apktool + jadx, bundletool for AAB) → **M1** 28 APK rules + **M2** 17 API
 rules + OSV dependency check with NVD CVSS/CWE + FlowDroid data flows → **M4** evidence correlation, exploitability and
-risk score → **ML** XGBoost trained on LVDAndro nudges the risk and explains itself with SHAP; an optional fine-tuned
-CodeBERT adds its own score and the code tokens its attention focused on. Findings map to OWASP MASVS/MASWE and carry
+risk score → **ML** XGBoost trained on LVDAndro nudges the risk and explains itself with SHAP and LIME; an optional
+fine-tuned CodeBERT adds its own score and an attention map over the evidence line (see `docs/FEATURES.md`). Findings map to OWASP MASVS/MASWE and carry
 evidence and a fix. Scans stop after `ANDROGUARD_TOOL_TIMEOUT` seconds per tool (default 900) and can be cancelled.
 
 ## Run from Docker Hub (no setup)
@@ -38,6 +38,6 @@ Then open http://localhost:8000 (sign in with that account for the admin CRM). S
 | Fine-tune CodeBERT | `python -m app.modules.ml.codebert data/lvdandro/LVDAndro_SourceFiles_MobSF_Processed.csv` |
 | Benchmark | `python -m eval.benchmark dev` / `heldout` / `benign` (APKs in `data/apks/`, results in `eval/results*.md`) |
 | FlowDroid on DroidBench | `python -m eval.droidbench` (APKs in `data/droidbench/`, results in `eval/results_droidbench.md`) |
-| Tests | `python tests/test_m1.py` (also `test_m2`, `test_m3_fixes`, `test_m4`, `test_api`) |
+| Tests | `python tests/test_m1.py` (also `test_m2`, `test_m3_fixes`, `test_m4`, `test_ml`, `test_api`) |
 
 Reports can contain real keys found in the scanned app: keep them private and out of Git.

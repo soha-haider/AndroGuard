@@ -19,6 +19,7 @@ def render_html(report: dict) -> str:
     """Every value comes from the scanned APK or the report, so everything is escaped."""
     e = lambda v: html.escape("" if v is None else str(v))
     risk, findings = report.get("risk", {}), report["findings"]
+    heat = lambda pairs: "".join(f"<span style='background:rgba(10,122,85,{float(w) * 0.5:.2f})'>{e(t)}</span>" for t, w in pairs)
     top = "".join(f"<tr><td>{e(f.get('risk_score'))}</td><td><span class='pill {e(f['severity'])}'>{e(f['severity'])}</span>"
                   f"</td><td>{e(f.get('exploitability'))}</td><td>{e(f['title'])}</td><td>{e(f.get('affected_component'))}</td></tr>"
                   for f in findings[:10])
@@ -32,6 +33,8 @@ def render_html(report: dict) -> str:
         f"<b>Evidence</b><ul>{''.join(f'<li><code>{e(x)}</code></li>' for x in f.get('evidence', []))}</ul>"
         f"<b>Why this exploitability</b><ul>{''.join(f'<li>{e(x)}</li>' for x in f.get('exploit_factors', []))}</ul>"
         + (f"<p><b>Related findings:</b> {e(', '.join(f['related']))}</p>" if f.get("related") else "")
+        + (f"<p><b>CodeBERT attention map</b> ({e(round(f['codebert_score'] * 100))}% likely vulnerable)<br>"
+           f"<code>{heat(f['codebert_attention'])}</code></p>" if f.get("codebert_attention") else "")
         + f"<p><b>OWASP:</b> {e(', '.join(f.get('masvs', []) + f.get('maswe', [])))}</p>"
         f"<p><b>Remediation:</b> {e(f.get('remediation'))}</p></div>" for f in findings)
     expl = risk.get("exploitability", {})

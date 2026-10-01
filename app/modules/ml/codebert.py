@@ -110,28 +110,22 @@ def _load():
 
 
 def _words(tok, ids, weights):
-    """Byte-pair pieces back into identifiers/literals, each scored by the attention its pieces received."""
-    words, scores = [], []
+    """Byte-pair pieces merged back into identifiers and literals, in line order: [(text, attention)]."""
+    words = []
     for tid, w in zip(ids, weights):
         if tid in tok.all_special_ids:
             continue
-        piece = tok.convert_ids_to_tokens(tid)
-        text = piece.lstrip("Ġ")
-        joins = not piece.startswith("Ġ") and words and re.match(r"\w", text) and re.search(r"\w$", words[-1])
-        if joins:
-            words[-1], scores[-1] = words[-1] + text, scores[-1] + w
+        text = tok.convert_tokens_to_string([tok.convert_ids_to_tokens(tid)])  # 'Ġ' back to a leading space
+        if words and re.match(r"\w", text) and re.search(r"\w$", words[-1][0]):
+            words[-1] = (words[-1][0] + text, words[-1][1] + w)
         else:
-            words.append(text)
-            scores.append(w)
-    best = {}
-    for word, score in zip(words, scores):
-        if re.fullmatch(r"[A-Za-z_]\w+", word):
-            best[word] = max(best.get(word, 0), score)
-    return sorted(best, key=best.get, reverse=True)
+            words.append((text, w))
+    return words
 
 
-def insights(lines: list[str], top: int = 5) -> list[tuple[float, list[str]]]:
-    """Per line: (probability of vulnerable code, words the classifier's <s> token attended to most, last layer)."""
+def insights(lines: list[str], top: int = 5) -> list[tuple[float, list[str], list[tuple[str, float]]]]:
+    """Per line: (probability of vulnerable code, identifiers the <s> token attended to most, attention map).
+    Last layer, averaged over heads; the map gives every word of the line a 0-1 weight, least to most attended (lines cut at 64 tokens)."""
     import torch
     tok, model = _load()
     out = []
@@ -141,7 +135,14 @@ def insights(lines: list[str], top: int = 5) -> list[tuple[float, list[str]]]:
             res = model(**enc, output_attentions=True)
         cls_attention = res.attentions[-1].mean(1)[:, 0, :]  # average over heads, row of the <s> token
         for i, p in enumerate(res.logits.softmax(-1)[:, 1].tolist()):
-            out.append((p, _words(tok, enc["input_ids"][i].tolist(), cls_attention[i].tolist())[:top]))
+            words = _words(tok, enc["input_ids"][i].tolist(), cls_attention[i].tolist())
+            best = {}
+            for text, w in words:
+                if re.fullmatch(r"[A-Za-z_]\w+", text.strip()):
+                    best[text.strip()] = max(best.get(text.strip(), 0), w)
+            lo, hi = min((w for _, w in words), default=0), max((w for _, w in words), default=0)
+            out.append((p, sorted(best, key=best.get, reverse=True)[:top],  # min-max: the map shows relative focus
+                        [(t, round((w - lo) / ((hi - lo) or 1), 2)) for t, w in words]))
     return out
 
 
@@ -150,8 +151,8 @@ def annotate(findings):
     if not available():
         return findings
     targets = [(f, re.sub(r"^L\d+: ", "", e)) for f in findings for e in f.evidence[:1] if re.match(r"L\d+: ", e)]
-    for (f, _), (p, words) in zip(targets, insights([line for _, line in targets])):
-        f.codebert_score, f.codebert_tokens = round(p, 3), words
+    for (f, _), (p, words, attention) in zip(targets, insights([line for _, line in targets])):
+        f.codebert_score, f.codebert_tokens, f.codebert_attention = round(p, 3), words, attention
         f.exploit_factors.append(f"CodeBERT rates the evidence {p:.0%} likely vulnerable; its attention was highest on "
                                  + ", ".join(words))
     return findings
