@@ -1,5 +1,6 @@
 {
   "_method": "Unit = (app, category). Positive if the app's official vulnerability list documents it (mapped to AndroGuard categories below). Categories the scanner reports but the docs do not mention are labelled in 'reviewed' after manually checking the report evidence. Hardcoded API keys and secrets are one evaluation category. 'out_of_scope' also lists documented issues whose evidence is absent from the released APK (checked in the decompiled code), since no static tool can see them.",
+  "_notes": ["Development-set scores: rules were adjusted after the first run on these same apps (first run: precision 0.727, recall 0.774, F1 0.75). results_heldout.md has the held-out test on apps never used for the rules.", "Remaining FN: InsecureShop credentials stored as map.put(\"shopuser\", \"!ns3csh0p\") (no generic rule without false positives) and its vulnerable upload library (no OSV advisory for the bundled versions)."],
   "apps": {
     "InsecureBankv2": {
       "source": "https://github.com/dineshshetty/Android-InsecureBankv2 (README.markdown)",

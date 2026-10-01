@@ -1,0 +1,96 @@
+{
+  "_method": "Benign apps from F-Droid (not vulnerable by design), used for the false-positive rate. There is no documented vulnerability list, so every category the scanner reports is labelled in 'reviewed' after checking its evidence: true = the weakness is really there, false = a false alarm. Recall is not measured on this set.",
+  "_benign": true,
+  "_notes": [
+    "Rules were not changed after this run.",
+    "A true label means the code or configuration really has the weakness; it does not mean the app is unsafe to use.",
+    "Noisiest rules on benign apps: HTTP-ENDPOINT (URLs inside bundled JavaScript and hint strings), STORAGE-EXTERNAL (path lookups, not writes) and EXPORTED-COMPONENT (intended entry points such as widgets)."
+  ],
+  "apps": {
+    "BinaryEye": {
+      "source": "F-Droid (de.markusfisch.android.binaryeye)",
+      "documented": {},
+      "out_of_scope": [],
+      "reviewed": {
+        "Exported Components": {
+          "label": false,
+          "note": "Exported on purpose as intent entry points (scan, pick, share, settings); no weakness shown"
+        },
+        "HTTP Endpoints": {
+          "label": false,
+          "note": "Input hints, code that prefixes user-typed URLs with http://, and app-link hosts; no endpoint the app calls"
+        },
+        "Cleartext Traffic": {
+          "label": true,
+          "note": "android:usesCleartextTraffic=true (lets users send scans to their own http:// URLs)"
+        },
+        "Insecure Data Storage": {
+          "label": true,
+          "note": "android:allowBackup=true; the Downloads writes are user-initiated exports"
+        },
+        "Insecure Cryptography": {
+          "label": false,
+          "note": "MD5/SHA-1 only display hashes of scanned content, not a security use"
+        },
+        "Insecure Permissions": {
+          "label": true,
+          "note": "Manifest requests ACCESS_FINE_LOCATION and CAMERA"
+        }
+      }
+    },
+    "PrivacyFriendlyNotes": {
+      "source": "F-Droid (org.secuso.privacyfriendlynotes)",
+      "documented": {},
+      "out_of_scope": [],
+      "reviewed": {
+        "Exported Components": {
+          "label": true,
+          "note": "Notification receivers and PFABackupService are exported without a permission, so any app can reach them"
+        },
+        "Insecure Data Storage": {
+          "label": true,
+          "note": "android:allowBackup=true"
+        },
+        "Insecure Permissions": {
+          "label": true,
+          "note": "Manifest requests CAMERA and RECORD_AUDIO"
+        }
+      }
+    },
+    "Markor": {
+      "source": "F-Droid (net.gsantner.markor)",
+      "documented": {},
+      "out_of_scope": [],
+      "reviewed": {
+        "Insecure WebView": {
+          "label": true,
+          "note": "The document view enables JavaScript and file access and exposes addJavascriptInterface to rendered content"
+        },
+        "Exported Components": {
+          "label": false,
+          "note": "Widget providers, widget configuration and document-open entry points must be exported"
+        },
+        "Hardcoded Secrets": {
+          "label": false,
+          "note": "hidden_password = **** is a UI mask, not a secret"
+        },
+        "HTTP Endpoints": {
+          "label": false,
+          "note": "All 32 hits are URLs inside bundled JS libraries, an autolink prefix and XML feature names"
+        },
+        "Cleartext Traffic": {
+          "label": true,
+          "note": "android:usesCleartextTraffic=true"
+        },
+        "Insecure Data Storage": {
+          "label": true,
+          "note": "android:allowBackup=true; the external-storage hits are mostly path lookups for user-chosen folders"
+        },
+        "Insecure Permissions": {
+          "label": true,
+          "note": "Manifest requests MANAGE_EXTERNAL_STORAGE and READ_EXTERNAL_STORAGE"
+        }
+      }
+    }
+  }
+}

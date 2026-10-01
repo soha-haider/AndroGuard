@@ -1,0 +1,241 @@
+{
+  "_method": "Held-out test set, same unit and labelling as ground_truth.json (unit = app x category). 'documented' was written from each app's official vulnerability list on 1 October 2026, before any of these apps was scanned. Rules were not changed after seeing these results. 'reviewed' only labels categories the scanner reported that the docs do not mention, after checking the report evidence.",
+  "_notes": [
+    "Held-out scores: none of these apps was used to write or tune the rules, and the rules were not changed after this run.",
+    "Documented issues that live only in native or Flutter code are listed as out of scope: the scanner reads the manifest, resources and decompiled Java/Kotlin."
+  ],
+  "apps": {
+    "DIVA": {
+      "source": "https://github.com/payatu/diva-android (README challenge list)",
+      "documented": {
+        "Insecure Data Storage": [
+          "1. Insecure Logging",
+          "3-6. Insecure Data Storage parts 1-4 (SharedPreferences, SQLite, temp file, external storage)"
+        ],
+        "Hardcoded Secrets": [
+          "2. Hardcoding Issues part 1",
+          "12. Hardcoding Issues part 2 (native library)"
+        ],
+        "Insecure WebView": [
+          "8. Input Validation Issues part 2 (WebView loads any URL, including file://)"
+        ],
+        "Exported Components": [
+          "9-11. Access Control Issues parts 1-3 (exported activities, content provider without permission)"
+        ]
+      },
+      "out_of_scope": [
+        "7. Input Validation Issues part 1 (SQL injection)",
+        "13. Input Validation Issues part 3 (native buffer overflow)"
+      ],
+      "reviewed": {
+        "Insecure Permissions": {
+          "label": true,
+          "note": "Manifest requests READ/WRITE_EXTERNAL_STORAGE"
+        },
+        "Cleartext Traffic": {
+          "label": true,
+          "note": "usesCleartextTraffic not set with targetSdkVersion 23 (< 28): cleartext allowed by default"
+        },
+        "Improper SSL/TLS Validation": {
+          "label": true,
+          "note": "targetSdkVersion 23 (< 24): user-installed CAs are trusted by default"
+        },
+        "HTTP Endpoints": {
+          "label": false,
+          "note": "Only a URL inside UI text (\"Register yourself at http://payatu.com\"); the app never connects to it"
+        }
+      }
+    },
+    "Sieve": {
+      "source": "drozer User Guide, Sieve walkthrough (https://labs.withsecure.com/tools/drozer); Sieve's own README has no list",
+      "documented": {
+        "Exported Components": [
+          "Exported activities reachable without login (PWList)",
+          "Content providers without permissions (DBContentProvider, FileBackupProvider)",
+          "Exported services (AuthService, CryptoService)"
+        ],
+        "Insecure Data Storage": [
+          "Master password and PIN stored in plain text in the Key table"
+        ]
+      },
+      "out_of_scope": [
+        "SQL injection in the content provider",
+        "Path traversal in FileBackupProvider",
+        "Application debuggable"
+      ],
+      "reviewed": {
+        "Hardcoded Secrets": {
+          "label": false,
+          "note": "All 5 hits are PASSWORD = \"com.mwr.example.sieve.PASSWORD\", an intent extra key name, not a password"
+        },
+        "Insecure Permissions": {
+          "label": true,
+          "note": "Custom READ_KEYS/WRITE_KEYS permissions use protectionLevel dangerous; storage permissions requested"
+        },
+        "Cleartext Traffic": {
+          "label": true,
+          "note": "usesCleartextTraffic not set with targetSdkVersion 17 (< 28): cleartext allowed by default"
+        },
+        "Improper SSL/TLS Validation": {
+          "label": true,
+          "note": "NetBackupHandler's X509TrustManager has an empty checkServerTrusted(); targetSdkVersion 17"
+        }
+      }
+    },
+    "InjuredAndroid": {
+      "source": "https://github.com/B3nac/InjuredAndroid (InjuredAndroid-FlagWalkthroughs.md)",
+      "documented": {
+        "Hardcoded Secrets": [
+          "Flag 1: hardcoded comparison string",
+          "Flag 3: flag in strings.xml",
+          "Flag 4: encoded flag in code"
+        ],
+        "Exported Components": [
+          "Flag 2: exported activity",
+          "Flag 5: broadcast receiver",
+          "Flag 11: deep link activity",
+          "Flag 12: protected components via a PoC app",
+          "Flag 16: deep link scheme bypass",
+          "Flag 18: FileProvider"
+        ],
+        "Insecure Cryptography": [
+          "Flag 6: flag encrypted with a key shipped in the app",
+          "Flag 7: password stored as an MD5 hash"
+        ],
+        "Insecure Data Storage": [
+          "Flag 7: flag password stored in the SQLite database"
+        ],
+        "Hardcoded API keys/secrets": [
+          "Flag 8: AWS key id and secret in strings.xml"
+        ],
+        "Insecure API Endpoints": [
+          "Flags 7 and 9: readable Firebase Realtime Database endpoints"
+        ]
+      },
+      "out_of_scope": [
+        "Flag 10: Unicode collision",
+        "Flag 13: binary in the APK run through a deep link",
+        "Flag 14: Flutter stored XSS (Dart code)",
+        "Flag 15: XOR key in Flutter native code",
+        "Flag 17: SSL pinning bypass in the Flutter module"
+      ],
+      "reviewed": {
+        "Insecure Permissions": {
+          "label": true,
+          "note": "Manifest requests READ_EXTERNAL_STORAGE, READ_PHONE_STATE"
+        },
+        "Insecure WebView": {
+          "label": true,
+          "note": "JavaScript enabled in DisplayPostXSS and FlagTwelveProtectedActivity, which load intent-supplied content"
+        },
+        "Cleartext Traffic": {
+          "label": true,
+          "note": "network_security_config base-config cleartextTrafficPermitted=true"
+        },
+        "HTTP Endpoints": {
+          "label": false,
+          "note": "Only URLs inside Flutter font metadata and license NOTICES"
+        },
+        "Excessive API Permissions": {
+          "label": true,
+          "note": "READ_PHONE_STATE requested; no TelephonyManager/SubscriptionManager use in the decompiled code"
+        }
+      }
+    },
+    "Allsafe": {
+      "source": "https://github.com/t0thkr1s/allsafe-android (README challenge list, v1.6)",
+      "documented": {
+        "Insecure Data Storage": [
+          "1. Insecure Logging"
+        ],
+        "Hardcoded Secrets": [
+          "2. Hardcoded Credentials"
+        ],
+        "Exported Components": [
+          "7. Insecure Broadcast Receiver",
+          "8. Deep Link Exploitation"
+        ],
+        "Insecure WebView": [
+          "10. Vulnerable WebView"
+        ]
+      },
+      "out_of_scope": [
+        "3. Root Detection",
+        "4. Arbitrary Code Execution",
+        "5. Secure Flag Bypass",
+        "6. Certificate Pinning Bypass",
+        "9. SQL Injection",
+        "11. Smali Patching",
+        "12. Native Library"
+      ],
+      "reviewed": {
+        "Insecure Cryptography": {
+          "label": true,
+          "note": "WeakCryptography: hardcoded AES key, AES/ECB, MD5; MD5 also in SQLInjection"
+        },
+        "Insecure Permissions": {
+          "label": true,
+          "note": "Manifest requests QUERY_ALL_PACKAGES, READ_EXTERNAL_STORAGE"
+        },
+        "Cleartext Traffic": {
+          "label": true,
+          "note": "network_security_config allows cleartext for infosecadventures.io"
+        },
+        "Hardcoded API keys/secrets": {
+          "label": true,
+          "note": "Google API key embedded in strings.xml; its impact depends on key restrictions a static scan cannot see"
+        },
+        "Insecure API Endpoints": {
+          "label": true,
+          "note": "dev_env = https://admin:password123@dev.infosecadventures.com, a staging endpoint with credentials"
+        },
+        "HTTP Endpoints": {
+          "label": false,
+          "note": "Only XML namespace URIs inside a SOAP template string, not endpoints"
+        }
+      }
+    },
+    "Vuldroid": {
+      "source": "https://github.com/jaiswalakshansh/Vuldroid (README, Vulnerabilities Covered)",
+      "documented": {
+        "Exported Components": [
+          "Steal files using FileProvider via intents",
+          "Steal password reset tokens / magic login links",
+          "WebView XSS via exported activity",
+          "WebView XSS via deep link"
+        ],
+        "Insecure WebView": [
+          "Steal files via WebView using XHR",
+          "WebView XSS via exported activity and deep link"
+        ]
+      },
+      "out_of_scope": [
+        "Code execution via a malicious app",
+        "Intent sniffing between two applications",
+        "Reading user email via broadcasts"
+      ],
+      "reviewed": {
+        "Insecure Data Storage": {
+          "label": true,
+          "note": "android:allowBackup=true (same label as InsecureBankv2's backup issue)"
+        },
+        "Insecure Permissions": {
+          "label": true,
+          "note": "Manifest requests READ_EXTERNAL_STORAGE"
+        },
+        "Cleartext Traffic": {
+          "label": true,
+          "note": "android:usesCleartextTraffic=true"
+        },
+        "Hardcoded API keys/secrets": {
+          "label": true,
+          "note": "Google API key embedded in strings.xml; impact depends on key restrictions"
+        },
+        "Insecure API Endpoints": {
+          "label": false,
+          "note": "Only the Firebase database URL the SDK needs; nothing shows the database is open, and remote servers are not tested"
+        }
+      }
+    }
+  }
+}

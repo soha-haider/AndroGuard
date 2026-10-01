@@ -1,4 +1,4 @@
-# AndroGuard benchmark (InsecureBankv2, AndroGoat, InsecureShop, OVAA)
+# AndroGuard benchmark, dev set (InsecureBankv2, AndroGoat, InsecureShop, OVAA)
 
 Precision **1.0**, recall **0.947**, F1 **0.973** (TP 36, FP 0, FN 2; unit = app x category, method in ground_truth.json)
 
@@ -18,6 +18,24 @@ Precision **1.0**, recall **0.947**, F1 **0.973** (TP 36, FP 0, FN 2; unit = app
 | Sensitive Data in URLs | 1 | 0 | 0 |
 | Excessive API Permissions | 1 | 0 | 0 |
 | Vulnerable Dependency | 0 | 0 | 1 |
+
+## Prioritization: rule-only baseline vs hybrid
+Relevant = the finding's category is one of the app's documented vulnerabilities.
+
+| Ordering | Precision@5 | Precision@10 | Mean average precision |
+|---|---|---|---|
+| Rule-only (severity, then confidence) | 0.95 | 0.95 | 0.954 |
+| + M4 exploitability and attack chains | 1.0 | 0.975 | 0.964 |
+| + ML-assisted risk (final score) | 1.0 | 1.0 | 0.965 |
+
+## Scan time and memory
+
+| App | APK (MB) | Findings | Time (s) | Peak RAM (MB) |
+|---|---|---|---|---|
+| InsecureBankv2 | 3.3 | 23 | 75.1 | 2071 |
+| AndroGoat | 6.8 | 23 | 61.7 | 3910 |
+| InsecureShop | 4.5 | 22 | 52.5 | 3134 |
+| OVAA | 4.0 | 19 | 35.0 | 3446 |
 
 | App | Category | Outcome |
 |---|---|---|
@@ -61,5 +79,5 @@ Precision **1.0**, recall **0.947**, F1 **0.973** (TP 36, FP 0, FN 2; unit = app
 | OVAA | Sensitive Data in URLs | TP |
 
 ## Notes
-- Development-set scores: rules were adjusted after the first run on these same apps (first run: precision 0.727, recall 0.774, F1 0.75). Held-out apps (DIVA, Ghera, Vuldroid) are still needed.
+- Development-set scores: rules were adjusted after the first run on these same apps (first run: precision 0.727, recall 0.774, F1 0.75). results_heldout.md has the held-out test on apps never used for the rules.
 - Remaining FN: InsecureShop credentials stored as map.put("shopuser", "!ns3csh0p") (no generic rule without false positives) and its vulnerable upload library (no OSV advisory for the bundled versions).
