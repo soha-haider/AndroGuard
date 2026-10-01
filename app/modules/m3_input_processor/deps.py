@@ -1,3 +1,4 @@
+import os
 import sys
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -32,15 +33,42 @@ def extract_dependencies(apk_path: Path) -> dict[str, str]:
     return {k: v for k, v in deps.items() if v}
 
 
+def nvd_details(cve: str) -> tuple[str, str] | None:
+    """CVSS and CWE from NVD for one CVE: ("NVD CVE-...: CVSS 7.5 HIGH, CWE-295", "HIGH")."""
+    # ponytail: without NVD_API_KEY, NVD allows 5 requests per 30 s; lookups past that come back empty
+    headers = {"apiKey": os.environ["NVD_API_KEY"]} if os.environ.get("NVD_API_KEY") else {}
+    try:
+        cve_data = requests.get("https://services.nvd.nist.gov/rest/json/cves/2.0", params={"cveId": cve},
+                                headers=headers, timeout=10).json()["vulnerabilities"][0]["cve"]
+    except Exception:
+        return None
+    metrics = cve_data.get("metrics", {})
+    m = next((metrics[k][0] for k in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2") if metrics.get(k)), None)
+    severity = (m.get("baseSeverity") or m["cvssData"].get("baseSeverity", "")) if m else ""
+    cwes = sorted({d["value"] for w in cve_data.get("weaknesses", []) for d in w.get("description", [])
+                   if d["value"].startswith("CWE-")})
+    parts = ([f"CVSS {m['cvssData']['baseScore']} {severity}".strip()] if m else []) + cwes
+    return (f"NVD {cve}: {', '.join(parts)}", severity) if parts else None
+
+
 class DependencyScanner:
-    # OSV aggregates GitHub Advisory Database (GHSA) entries for Maven, so GHSA is covered here.
+    # OSV aggregates GitHub Advisory Database (GHSA) entries for Maven, so GHSA is covered here; NVD adds CVSS and CWE.
     OSV_URL = "https://api.osv.dev/v1/query"
 
     def scan_apk(self, apk_path: Path) -> List[StandardFinding]:
         # one HTTP call per library (~1 s each; React Native apps bundle 60+), so keep 8 in flight
         with ThreadPoolExecutor(max_workers=8) as pool:
             results = pool.map(lambda dep: self.query_osv(*dep), extract_dependencies(apk_path).items())
-        return [f for found in results for f in found]
+        findings = [f for found in results for f in found]
+        nvd = {cve: nvd_details(cve) for cve in {f.cve for f in findings if f.cve}}  # one NVD call per CVE
+        for f in findings:
+            if nvd.get(f.cve):
+                line, severity = nvd[f.cve]
+                f.evidence.append(line)
+                f.references.insert(0, f"https://nvd.nist.gov/vuln/detail/{f.cve}")
+                if f.severity == "UNKNOWN" and severity in SEVERITY_MAP:
+                    f.severity = SEVERITY_MAP[severity]
+        return findings
 
     def query_osv(self, package_name: str, version: str) -> List[StandardFinding]:
         payload = {

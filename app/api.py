@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from app import auth
 from app.database import AuthSession, Scan, Session, User, now
+from app.modules.m3_input_processor.extractor import stop_tools
 from app.modules.m4_risk_engine.report import render_html, render_pdf
 from app.pipeline import scan
 
@@ -28,8 +29,17 @@ DUMMY_HASH = auth.hash_password(uuid.uuid4().hex)  # unknown emails still pay fo
 # ponytail: one in-process worker (jadx needs GBs of RAM). Move to Redis + RQ/Celery workers when scans must
 # survive restarts or run on several machines.
 worker = ThreadPoolExecutor(max_workers=1)
+CANCELLED: set[int] = set()  # scan ids the user asked to stop
+UNCOUNTED = ("failed", "cancelled")  # these do not use up a quota
+class Static(StaticFiles):
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"  # browsers revalidate (304 if unchanged), so an update shows at once
+        return response
+
+
 app = FastAPI(title="AndroGuard")
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
+app.mount("/static", Static(directory=STATIC), name="static")
 
 with Session() as s:  # scans that were queued or running when the server stopped will never finish
     s.query(Scan).filter(Scan.status.in_(["queued", "running"])).update(
@@ -51,15 +61,39 @@ def _update(scan_id: int, **fields):
         s.commit()
 
 
+class Cancelled(Exception):
+    pass
+
+
+def _friendly(e: Exception) -> str:
+    text = str(e)
+    low = text.lower()
+    if "paging file" in low or "insufficient memory" in low or "outofmemoryerror" in low:
+        return "The server ran out of memory while decompiling this app. Free some memory or disk space and scan it again."
+    if "no space left" in low or "not enough space" in low:
+        return "The server ran out of disk space during this scan. Free some space and scan it again."
+    return text[-2000:]
+
+
 def _run(scan_id: int, path: Path, name: str):
+    def progress(msg: str):  # called between pipeline stages, so a cancel takes effect at the next stage at the latest
+        if scan_id in CANCELLED:
+            raise Cancelled
+        _update(scan_id, progress=msg[:255])
+
     try:
+        progress("Starting")
         _update(scan_id, status="running")
-        report = scan(str(path), progress=lambda msg: _update(scan_id, progress=msg[:255]))
+        report = scan(str(path), progress=progress)
         report["file"] = name  # the pipeline only saw the server-chosen temp name
         _update(scan_id, status="done", sha256=report["sha256"], report=report, progress="Done", finished_at=now())
     except Exception as e:  # any failure is shown to the user instead of leaving the scan stuck
-        _update(scan_id, status="failed", error=str(e)[-2000:], finished_at=now())
+        if scan_id in CANCELLED:
+            _update(scan_id, status="cancelled", error="Cancelled by the user", finished_at=now())
+        else:
+            _update(scan_id, status="failed", error=_friendly(e), finished_at=now())
     finally:
+        CANCELLED.discard(scan_id)
         path.unlink(missing_ok=True)  # privacy by design: the uploaded package never outlives its scan
 
 
@@ -76,7 +110,7 @@ def _summary(row: Scan, owner: str | None = None) -> dict:
 
 def _quota(user: User | None, device: str) -> dict:
     with Session() as s:
-        counted = s.query(Scan).filter(Scan.status != "failed")  # failed scans do not use up the quota
+        counted = s.query(Scan).filter(Scan.status.notin_(UNCOUNTED))
         if user:
             used = counted.filter(Scan.user_id == user.id).count()
             limit = None if user.role in ("admin", "superadmin") else user.scan_limit
@@ -209,6 +243,19 @@ def get_scan(scan_id: int, request: Request):
     return {**_summary(row), "report": row.report}
 
 
+@app.post("/api/scans/{scan_id}/cancel")
+def cancel_scan(scan_id: int, request: Request):
+    row = _get(scan_id, request)
+    if row.status not in ("queued", "running"):
+        raise HTTPException(409, "Only a queued or running scan can be cancelled")
+    CANCELLED.add(scan_id)
+    if row.status == "running":
+        stop_tools()  # ponytail: one worker, so the tool running now belongs to this scan
+    else:
+        _update(scan_id, status="cancelled", error="Cancelled by the user", finished_at=now())
+    return {"ok": True}
+
+
 @app.get("/api/scans/{scan_id}/report.html", response_class=HTMLResponse)
 def report_html(scan_id: int, request: Request):
     return render_html(_get(scan_id, request, done=True).report)
@@ -267,7 +314,7 @@ def crm_users(q: str = "", admin: User = Depends(auth.require_admin)):
         if q:
             query = query.filter(User.email.ilike(f"%{q}%") | User.name.ilike(f"%{q}%"))
         rows = query.order_by(User.id.desc()).limit(200).all()
-        used = dict(s.query(Scan.user_id, func.count(Scan.id)).filter(Scan.status != "failed").group_by(Scan.user_id).all())
+        used = dict(s.query(Scan.user_id, func.count(Scan.id)).filter(Scan.status.notin_(UNCOUNTED)).group_by(Scan.user_id).all())
     return [_crm_user(u, used.get(u.id, 0)) for u in rows]
 
 
@@ -293,7 +340,7 @@ def crm_update_user(user_id: int, body: UserPatch, admin: User = Depends(auth.re
         for field, value in changes.items():
             setattr(user, field, value)
         s.commit()
-        used = s.query(Scan).filter(Scan.user_id == user_id, Scan.status != "failed").count()
+        used = s.query(Scan).filter(Scan.user_id == user_id, Scan.status.notin_(UNCOUNTED)).count()
     if changes.get("status") == "blocked":
         auth.end_sessions(user_id)  # a blocked user is signed out everywhere at once
     return _crm_user(user, used)

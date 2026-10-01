@@ -1,6 +1,8 @@
 import hashlib
 import sys
 import tempfile
+import threading
+import time
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -9,7 +11,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from app.modules.m3_input_processor.validator import validate_package
 from app.modules.m3_input_processor.deps import extract_dependencies, DependencyScanner
-from app.modules.m3_input_processor.extractor import _run
+from app.modules.m3_input_processor.extractor import _run, stop_tools
 
 
 def _zip(path: Path, entries: dict) -> Path:
@@ -48,12 +50,17 @@ def test_m3_fixes():
 
         fake = {"vulns": [{"id": "GHSA-x", "aliases": ["CVE-2022-25647"], "database_specific": {"severity": "MODERATE"},
                            "references": [{"url": "https://example.com"}]}]}
-        with patch("app.modules.m3_input_processor.deps.requests.post") as post:
+        nvd = {"vulnerabilities": [{"cve": {"metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 7.5, "baseSeverity": "HIGH"}}]},
+                                            "weaknesses": [{"description": [{"value": "CWE-502"}]}]}}]}
+        with patch("app.modules.m3_input_processor.deps.requests.post") as post, \
+                patch("app.modules.m3_input_processor.deps.requests.get") as get:
             post.return_value.status_code = 200
             post.return_value.json.return_value = fake
+            get.return_value.json.return_value = nvd
             f = DependencyScanner().scan_apk(apk)
         assert len(f) == 2 and f[0].severity == "MEDIUM" and f[0].cve == "CVE-2022-25647"
-        assert f[0].references == ["https://example.com"]
+        assert f[0].references == ["https://nvd.nist.gov/vuln/detail/CVE-2022-25647", "https://example.com"]
+        assert "NVD CVE-2022-25647: CVSS 7.5 HIGH, CWE-502" in f[0].evidence and get.call_count == 1  # once per CVE
 
     # jadx.bat on Windows exits 1 even for "finished with errors" (partial output is fine); real failures must raise
     fake_tool = [sys.executable, "-c"]
@@ -65,6 +72,22 @@ def test_m3_fixes():
         assert False, "real jadx failure was swallowed"
     except RuntimeError as e:
         assert "exit code 1" in str(e) and "Process error: boom" in str(e)
+
+    # a hung tool is killed after TOOL_TIMEOUT, and stop_tools() ends a running one (scan cancel)
+    sleeper = fake_tool + ["import time; time.sleep(60)"]
+    with patch("app.modules.m3_input_processor.extractor.TOOL_TIMEOUT", 1):
+        try:
+            _run(sleeper, "sleepy tool")
+            assert False, "hung tool was not stopped"
+        except RuntimeError as e:
+            assert "was stopped" in str(e)
+    threading.Timer(0.5, stop_tools).start()
+    started = time.time()
+    try:
+        _run(sleeper, "cancelled tool")
+        assert False, "stopped tool reported success"
+    except RuntimeError:
+        assert time.time() - started < 15, "stop_tools did not kill the tool"
     print("[OK] M3 fixes check passed")
 
 

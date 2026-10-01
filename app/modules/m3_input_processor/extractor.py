@@ -1,5 +1,7 @@
+import contextlib
 import os
 import shutil
+import signal
 import subprocess
 import zipfile
 from functools import cached_property
@@ -10,22 +12,55 @@ TOOLS_DIR = Path(__file__).resolve().parents[3] / "tools"  # optional local inst
 
 def _tool(name: str) -> list[str]:
     """Resolves a CLI tool to an absolute path so we never need shell=True (works for .bat wrappers on Windows too)."""
-    if name == "bundletool" and not shutil.which(name) and os.environ.get("BUNDLETOOL_JAR"):
-        return ["java", "-jar", os.environ["BUNDLETOOL_JAR"]]
+    if name == "bundletool" and not shutil.which(name):
+        jar = os.environ.get("BUNDLETOOL_JAR") or next(iter(sorted((TOOLS_DIR / "bundletool").glob("bundletool*.jar"))), None)
+        if jar:
+            return ["java", "-jar", str(jar)]
     path = shutil.which(name) or shutil.which(name, path=f"{TOOLS_DIR / name}{os.pathsep}{TOOLS_DIR / name / 'bin'}")
     if not path:
         raise RuntimeError(f"{name} not found in PATH or {TOOLS_DIR / name}")
     return [path]
 
 
-def _run(cmd: list[str], step: str, ok=(0,), ok_marker=None, env=None):
+TOOL_TIMEOUT = int(os.environ.get("ANDROGUARD_TOOL_TIMEOUT", 900))  # seconds per tool run; raise it for huge apps
+RUNNING: set[subprocess.Popen] = set()
+
+
+def _kill(proc: subprocess.Popen):
+    # the .bat wrappers start java as a child, so the whole process tree has to go
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+    else:
+        with contextlib.suppress(ProcessLookupError):  # it may have exited on its own a moment ago
+            os.killpg(proc.pid, signal.SIGKILL)
+
+
+def stop_tools():
+    """Kills the tool runs in progress (used to cancel a scan)."""
+    for proc in list(RUNNING):
+        _kill(proc)
+
+
+def _run(cmd: list[str], step: str, ok=(0,), ok_marker=None, env=None, timeout=None):
     # errors="replace": tool logs may contain bytes the console codepage can't decode (e.g. obfuscated class names)
     # stdin=DEVNULL: apktool.bat calls `pause` when run via cmd /c, which would otherwise hang waiting for a key
-    result = subprocess.run(cmd, capture_output=True, text=True, errors="replace", stdin=subprocess.DEVNULL, env=env)
-    output = result.stdout + result.stderr  # jadx logs to stdout, apktool to stderr
-    if result.returncode not in ok and not (ok_marker and ok_marker in output):
+    timeout = timeout or TOOL_TIMEOUT
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, text=True,
+                            errors="replace", env=env, start_new_session=os.name != "nt")
+    RUNNING.add(proc)
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill(proc)
+        proc.communicate()
+        limit = f"{timeout // 60} minutes" if timeout >= 120 else f"{timeout} seconds"
+        raise RuntimeError(f"{step} took longer than {limit} and was stopped")
+    finally:
+        RUNNING.discard(proc)
+    output = stdout + stderr  # jadx logs to stdout, apktool to stderr
+    if proc.returncode not in ok and not (ok_marker and ok_marker in output):
         tail = "\n".join(output.strip().splitlines()[-20:])
-        raise RuntimeError(f"{step} failed (exit code {result.returncode}):\n{tail}")
+        raise RuntimeError(f"{step} failed (exit code {proc.returncode}):\n{tail}")
 
 
 class APKExtractor:
