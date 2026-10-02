@@ -152,5 +152,16 @@ def test_api():
     print("[OK] API check passed: free trial quota, ownership, signup claim, login limit, cancel, roles, block and delete")
 
 
+def test_odd_filenames():  # runs after test_api: only the suffix decides, not the characters or the length
+    api.scan = fake_scan
+    client = TestClient(api.app)
+    assert upload(client, "notes.txt").status_code == 400
+    assert upload(client, "no-suffix").status_code == 400
+    assert upload(client, "Some App (v2) — final & best, #1 +pro " + "x" * 300 + ".APK").status_code == 202
+    assert len(client.get("/api/scans").json()[0]["filename"]) == 255  # trimmed to the column width
+    print("[OK] odd filenames accepted")
+
+
 if __name__ == "__main__":
     test_api()
+    test_odd_filenames()

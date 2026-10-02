@@ -204,8 +204,9 @@ async def create_scan(request: Request, response: Response, file: UploadFile = F
         raise HTTPException(403, "You have used your 3 free scans. Create an account to keep scanning." if user is None
                             else "You have reached your scan limit. Ask the administrator to raise it.")
     name = Path(file.filename or "").name
-    if not re.fullmatch(r"[\w .()\[\]-]{1,200}\.(apk|aab)", name, re.IGNORECASE):
+    if Path(name).suffix.lower() not in (".apk", ".aab"):
         raise HTTPException(400, "Upload an .apk or .aab file")
+    name = name[:255]  # display-only (column is String(255)); the path on disk is server-chosen below
     path = UPLOADS / f"{uuid.uuid4().hex}{Path(name).suffix.lower()}"  # server-chosen name reaches the tools
     size = 0
     with open(path, "wb") as out:
